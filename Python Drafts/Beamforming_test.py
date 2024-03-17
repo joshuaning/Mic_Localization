@@ -4,10 +4,10 @@ from scipy.io import wavfile
 import numpy as np
 import sounddevice
 
-fs, back0 = wavfile.read('Sounds/beamforming_test/500HzBack0deg.wav') 
-fs, back180 = wavfile.read('Sounds/beamforming_test/500HzBack180deg.wav') 
-fs, front0 = wavfile.read('Sounds/beamforming_test/500HzFront0deg.wav')
-fs, front180 = wavfile.read('Sounds/beamforming_test/500HzFront180deg.wav')
+fs, back0 = wavfile.read('Sounds/beamforming_test/Initial_test_usb_mic/500HzBack0deg.wav') 
+fs, back180 = wavfile.read('Sounds/beamforming_test/Initial_test_usb_mic/500HzBack180deg.wav') 
+fs, front0 = wavfile.read('Sounds/beamforming_test/Initial_test_usb_mic/500HzFront0deg.wav')
+fs, front180 = wavfile.read('Sounds/beamforming_test/Initial_test_usb_mic/500HzFront180deg.wav')
 
 #wav exported was dual channel, only take a single channel, make same shape
 front0 = (front0[:,0]) [0:250000]
