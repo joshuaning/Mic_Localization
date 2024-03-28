@@ -21,6 +21,7 @@ AudioInputI2S         audioInput;         // audio shield: mic or line-in
 AudioFilterFIR        BandpassL;
 AudioFilterFIR        BandpassR;
 AudioOutputI2S        audioOutput;        // audio shield: headphones & line-out
+VAD                   vadLeft;
 
 // Create Audio connections between the components
 // Route audio into the left and right filters
@@ -28,8 +29,9 @@ AudioOutputI2S        audioOutput;        // audio shield: headphones & line-out
 //AudioConnection c2(audioInput, 1, audioOutput, 1);
 AudioConnection c1(audioInput, 0, BandpassL, 0);
 AudioConnection c2(audioInput, 1, BandpassR, 0);
-AudioConnection c3(BandpassL, 0, audioOutput, 0);
+AudioConnection c3(BandpassL, 0, vadLeft, 0);
 AudioConnection c4(BandpassR, 0, audioOutput, 1);
+AudioConnection c5(vadLeft, 0, audioOutput, 0);
 
 AudioControlSGTL5000 audioShield;
 
@@ -43,6 +45,7 @@ struct fir_filter {
 // index of current filter. Start with the low pass.
 //Change to 1 for bandpass
 int start_idx = 0;
+const short cp = 0;
 struct fir_filter fir_list[] = {
   {LP  , 200},   
   {BP  , 200},
@@ -55,12 +58,14 @@ void setup() {
   // Audio connections require memory to work.  For more
   // detailed information, see the MemoryAndCpuUsage example
   AudioMemory(100);
+  Serial.begin(9600);
   // Enable the audio shield, select input, and enable output
   audioShield.inputSelect(myInput);
   audioShield.enable();
   audioShield.volume(0.6);
   BandpassL.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
   BandpassR.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
+  vadLeft.begin(((const short *) 2), 100, 1000000000);
 
 }
 

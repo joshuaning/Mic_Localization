@@ -1,16 +1,15 @@
 #include <Arduino.h>
+#include <AudioStream.h> // github.com/PaulStoffregen/cores/blob/master/teensy4/AudioStream.h
 #include "vad.h"
 #define LED 13
 #define INTERVAL 3000
 
 static int count = 0;
 static bool switcher = true;
-const int ENERGY_THRESHOLD = 2911495;
-const int ENERGY_DIFF_THRESHOLD = 10000000;
 
-
-void AudioFilterFIR::update(void)
+void VAD::update(void)
 {
+	Serial.println("VAD::update");
 	count++;
 	audio_block_t *block, *b_new;
 
@@ -20,6 +19,7 @@ void AudioFilterFIR::update(void)
 	// If there's no coefficient table, give up.  
 	if (coeff_p == NULL) {
 		release(block);
+		Serial.println("No coefficient table");
 		return;
 	}
 
@@ -28,6 +28,7 @@ void AudioFilterFIR::update(void)
 		// Just passthrough
 		transmit(block);
 		release(block);
+		Serial.println("Passthru");
 		return;
 	}
 
@@ -35,7 +36,8 @@ void AudioFilterFIR::update(void)
 	b_new = allocate();
 	if (b_new) {
 		//arm_fir_fast_q15(&fir_inst, (q15_t *)block->data, (q15_t *)b_new->data, AUDIO_BLOCK_SAMPLES);
-		serial.print(energyBasedVAD((q15_t *)block->data, (q15_t *)b_new->data, AUDIO_BLOCK_SAMPLES));
+		Serial.println("VAD::update::energyBasedVAD");
+		Serial.println(energyBasedVAD( (int16_t *)block->data, (int16_t *)b_new->data, AUDIO_BLOCK_SAMPLES));
 		transmit(b_new); // send the FIR output
 		release(b_new);
 	}
@@ -47,25 +49,4 @@ void AudioFilterFIR::update(void)
 		digitalWrite(LED, switcher);
 		count = 0;
 	}
-}
-
-int prev_energy = 0;
-bool energyBasedVAD(const audio_block_t *pSrc, audio_block_t *pDst, unit32_t blockSize){
-    // Simple energy-based Voice Activity Detection
-    int current_energy = 0;
-	for (int i = 0; i < blockSize; i++) {
-		current_energy += (int)pSrc[i] * (int)pSrc[i];
-	}
-  
-	int energy_diff = abs(current_energy - prev_energy);
-	prev_energy = current_energy;
-	memcpy(pSrc, pDst, blockSize);
-	  
-	/*Serial.print("Current energy: ");
-	Serial.println(current_energy);
-	Serial.print("Energy diff: ");
-	Serial.println(energy_diff);*/	
-
-    // Return the result of the VAD check
-    return energy_diff > ENERGY_DIFF_THRESHOLD && current_energy > ENERGY_THRESHOLD;
 }
