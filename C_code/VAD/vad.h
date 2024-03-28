@@ -21,10 +21,10 @@ public:
 		ENERGY_THRESHOLD = thresh;
 		ENERGY_DIFF_THRESHOLD = diff_thresh;
 		// Initialize FIR instance (ARM DSP Math Library)
-		if (coeff_p && (coeff_p != FIR_PASSTHRU)) {
+		if ((coeff_p != FIR_PASSTHRU)) {
 			//if (arm_fir_init_q15(&fir_inst, n_coeffs, (q15_t *)coeff_p, &StateQ15[0], AUDIO_BLOCK_SAMPLES) != ARM_MATH_SUCCESS) {
 				// n_coeffs must be an even number, 4 or larger
-				coeff_p = NULL;
+				coeff_p = ((const short *) 2);
 			//}
 		}
 	}
@@ -43,13 +43,20 @@ public:
 	  
 		int energy_diff = abs(current_energy - prev_energy);
 		prev_energy = current_energy;
-		memcpy(pDst, pSrc, blockSize);
+		
 		  
-		/*Serial.print("Current energy: ");
+		Serial.print("Current energy: ");
 		Serial.println(current_energy);
 		Serial.print("Energy diff: ");
-		Serial.println(energy_diff);*/	
+		Serial.println(energy_diff);
 
+
+		if (energy_diff > ENERGY_DIFF_THRESHOLD && current_energy > ENERGY_THRESHOLD){
+			memcpy(pDst, pSrc, blockSize*sizeof(*pDst));
+		}
+		else{
+			memset(pDst, 0, blockSize*sizeof(*pDst));
+		}
 		// Return the result of the VAD check
 		return energy_diff > ENERGY_DIFF_THRESHOLD && current_energy > ENERGY_THRESHOLD;
 	}

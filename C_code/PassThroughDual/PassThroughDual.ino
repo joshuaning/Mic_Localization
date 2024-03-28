@@ -45,6 +45,7 @@ struct fir_filter {
 // index of current filter. Start with the low pass.
 //Change to 1 for bandpass
 int start_idx = 0;
+const short cp = 0;
 struct fir_filter fir_list[] = {
   {LP  , 200},   
   {BP  , 200},
@@ -64,7 +65,7 @@ void setup() {
   audioShield.volume(0.6);
   BandpassL.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
   BandpassR.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
-  vadLeft.begin((const short *)1, 2911495, 10000000);
+  vadLeft.begin(((const short *) 2), 100, 1000000);
 
 }
 
