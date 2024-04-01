@@ -73,6 +73,7 @@ class Wiener:
 
     @staticmethod
     def a_priori_gain(SNR):
+        """
         Function that computes the a priori gain G of Wiener filtering.
         
             Input :
@@ -208,3 +209,4 @@ class Wiener:
                 # Rolling matrix to update old values (Circshift in Matlab)
                 S = np.roll(S, 1, axis=0)
         wav.write(self.WAV_FILE+'_wiener_two_step.wav', self.FS,s_est_tsnr/s_est_tsnr.max() )
+
