@@ -65,7 +65,8 @@ void setup() {
   audioShield.volume(0.6);
   BandpassL.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
   BandpassR.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
-  vadLeft.begin(((const short *) 2), 100, 1000000000);
+  //vadLeft.begin(((const short *) 2), 100, 1000000000);
+  vadLeft.begin((const short *)2, 2911495, 10000000);
 
 }
 
