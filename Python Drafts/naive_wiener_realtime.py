@@ -42,6 +42,7 @@ class Wiener:
         S = X_framed * G
         temp_s_est = np.real(ifft(S))
         return temp_s_est[:self.block_size]
+    
 
 def main():
     sample_rate = 44100

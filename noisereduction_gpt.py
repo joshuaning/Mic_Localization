@@ -3,14 +3,19 @@ from scipy.fftpack import fft, ifft
 import scipy.signal as sg
 
 class RealTimeWiener:
-    def __init__(self, fs, buffer_size=128):
+    def __init__(self, fs, channels, buffer_size=128):
         self.fs = fs  # Sampling frequency
-        self.frame_length = 128  # Chunk size or frame length in samples
-        self.NFFT = 128  # FFT size, matching the frame length
+        self.frame_length = buffer_size # Chunk size or frame length in samples. We think it is safe to make this the same as the buffer size.
+        self.NFFT = buffer_size  # FFT size, matching the frame length
+        self.buffer_size = buffer_size  # Buffer size in samples
         self.WINDOW = sg.hann(self.frame_length)  # Window function
         # Number of frames corresponding to half-second of audio
-        self.noise_frames = int((0.5 * fs) / buffer_size)
+        self.noise_frames = int((0.5 * fs) / (buffer_size))
+        self.frames_processed = 0
+        self.Sbb = None
+        self.channels = channels
         self.noise_estimation_complete = False
+
 
     def estimate_noise_floor(self, frame):
         # Initialize PSD estimate array if not already
@@ -23,6 +28,7 @@ class RealTimeWiener:
         
         # Update PSD estimate sum
         self.Sbb += np.abs(frame_fft) ** 2
+
 
     @staticmethod
     def a_priori_gain(SNR):
@@ -46,6 +52,7 @@ class RealTimeWiener:
         # Check if we are still in the noise estimation phase
         if not self.noise_estimation_complete:
             # Perform noise estimation
+            print("Estimating noise floor...", self.frames_processed, "/", self.noise_frames)
             self.estimate_noise_floor(x_framed)
             # Check if we have processed enough frames for noise estimation
             if self.frames_processed >= self.noise_frames:
