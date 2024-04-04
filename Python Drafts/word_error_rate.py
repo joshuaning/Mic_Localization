@@ -95,18 +95,18 @@ audio = whisper.load_audio('wiener_test_chunck_output.wav')
 audio = whisper.pad_or_trim(audio)
 result = whisper.transcribe(model, audio)
 hypothesis = result["text"]
-print('processed')
+print('two step')
 print(hypothesis)
 
-import numpy as np
-n = 300000  # replace with your desired length
-mask = np.zeros(n)
-mask[::128] = 1
+# import numpy as np
+# n = 300000  # replace with your desired length
+# mask = np.zeros(n)
+# mask[::128] = 1
 
-import matplotlib.pyplot as plt
-plt.plot(audio[0:300000], 'o', markersize=1)
-plt.plot(mask*audio[0:300000], 'o', markersize=2)
-plt.show()
+# import matplotlib.pyplot as plt
+# plt.plot(audio[0:300000], '-o', markersize=1)
+# plt.plot(mask*audio[0:300000], 'o', markersize=2)
+# plt.show()
 
 audio = whisper.load_audio('wiener_test.wav')
 audio = whisper.pad_or_trim(audio)

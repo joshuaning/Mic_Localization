@@ -180,16 +180,18 @@ if __name__ == '__main__':
 
     WAV_FILE = 'wiener_test'
     fs, x  = wav.read(WAV_FILE + '.wav')
-    print(x)
+    
 
     Sbb, N_NOISE = welchs_periodogram(WAV_FILE, 0, 0.6085)
 
     final_out = np.zeros(x.shape)
 
-    for chunk in range(int(0.6085*fs), x.shape[0] - 128, 128):
-        denoise = Wiener(fs, x[chunk:chunk+128], Sbb, N_NOISE)
+    size = int(0.5*fs)
+
+    for chunk in range(int(0.6085*fs), x.shape[0] - size, size):
+        denoise = Wiener(fs, x[chunk:chunk+size], Sbb, N_NOISE)
         a = denoise.wiener()
-        final_out[chunk:chunk+128, 0:2] = a
+        final_out[chunk:chunk+size, 0:2] = a
 
     print(denoise.frames)
 
