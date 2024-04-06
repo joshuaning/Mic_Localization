@@ -91,7 +91,7 @@ print(f"Overall performance: {np.mean(flattened_list):.2f} (mean), {np.std(flatt
 print(performance)
 '''
 
-audio = whisper.load_audio('wiener_test_chunck_output.wav')
+audio = whisper.load_audio('wiener_test_chunck_output_normalize_whole.wav')
 audio = whisper.pad_or_trim(audio)
 result = whisper.transcribe(model, audio)
 hypothesis = result["text"]

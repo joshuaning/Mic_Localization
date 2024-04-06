@@ -35,7 +35,7 @@ def welchs_periodogram(WAV_FILE, *T_NOISE):
     WAV_FILE, T_NOISE = WAV_FILE, T_NOISE
     FS, x = wav.read(WAV_FILE + '.wav')
     NFFT, SHIFT, T_NOISE = 2**10, 0.5, T_NOISE #0.5
-    FRAME = int(0.0002*FS) # Frame of 20 ms
+    FRAME = int(0.007*FS) # Frame of 0.2 ms
 
     # Computes the offset and number of frames for overlapp - add method.
     OFFSET = int(SHIFT*FRAME)
@@ -87,7 +87,7 @@ class Wiener:
         self.FS = fs
         self.x = sig
         self.NFFT, self.SHIFT = 2**10, 0.5 #0.5 
-        self.FRAME = int(0.0002*self.FS) # Frame of 20 ms
+        self.FRAME = int(0.007*self.FS) # Frame of 0.20 ms
 
         # Computes the offset and number of frames for overlapp - add method.
         self.OFFSET = int(self.SHIFT*self.FRAME)
@@ -103,19 +103,6 @@ class Wiener:
         self.Sbb = Sbb
         self.N_NOISE = N_NOISE
 
-    @staticmethod
-    def a_posteriori_gain(SNR):
-        """
-        Function that computes the a posteriori gain G of Wiener filtering.
-        
-            Input :
-                SNR : 1D np.array, Signal to Noise Ratio
-            Output :
-                G : 1D np.array, gain G of Wiener filtering
-                
-        """
-        G = (SNR - 1)/SNR
-        return G
 
     @staticmethod
     def a_priori_gain(SNR):
@@ -131,17 +118,6 @@ class Wiener:
         G = SNR/(SNR + 1)
         return G
 
-    def moving_average(self):
-        # Initialising Sbb
-        Sbb = np.zeros((self.NFFT, self.channels.size))
-        # Number of frames used for the noise
-        noise_frames = np.arange((self.N_NOISE - self.FRAME) + 1)
-        for channel in self.channels:
-            for frame in noise_frames:
-                x_framed = self.x[frame:frame + self.FRAME, channel]*self.WINDOW
-                X_framed = fft(x_framed, self.NFFT)
-                Sbb[:, channel] += np.abs(X_framed)**2
-        return Sbb/noise_frames.size
 
     def wiener(self):
         """
@@ -188,14 +164,16 @@ if __name__ == '__main__':
 
     size = int(0.5*fs)
 
+    max_sofar  = 0
+
     for chunk in range(int(0.6085*fs), x.shape[0] - size, size):
         denoise = Wiener(fs, x[chunk:chunk+size], Sbb, N_NOISE)
         a = denoise.wiener()
-        final_out[chunk:chunk+size, 0:2] = a
+        max_sofar = max(max_sofar, np.max(a))
+        final_out[chunk:chunk+size, 0:2] = a/max_sofar
 
-    print(denoise.frames)
 
     # print(final_out)
     print(final_out)
-    wav.write(WAV_FILE + '_chunck_output.wav', fs, final_out/final_out.max())
+    wav.write(WAV_FILE + '_chunck_output_007.wav', fs, final_out)
     print(fs)
