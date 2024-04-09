@@ -6,20 +6,6 @@ import numpy as np
 import os
 
 
-def halfwave_rectification(array):
-    """
-    Function that computes the half wave rectification with a threshold of 0.
-    
-    Input :
-        array : 1D np.array, Temporal frame
-    Output :
-        halfwave : 1D np.array, Half wave temporal rectification
-        
-    """
-    halfwave = np.zeros(array.size)
-    halfwave[np.argwhere(array > 0)] = 1
-    return halfwave
-
 def welchs_periodogram(WAV_FILE, *T_NOISE):
     """
     Estimation of the Power Spectral Density (Sbb) of the stationnary noise
