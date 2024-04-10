@@ -35,10 +35,10 @@ public:
 	
 	virtual void update(void);
 		
-	bool energyBasedVAD(const int16_t *pSrc, int16_t *pDst, uint32_t blockSize){
+	bool energyBasedVAD(const int16_t *pSrc, int16_t *pDst, uint32_t blockSamples){
 		// Simple energy-based Voice Activity Detection
 		int current_energy = 0;
-		for (uint32_t i = 0; i < blockSize; i++) {
+		for (uint32_t i = 0; i < blockSamples; i++) {
 			current_energy += pSrc[i] * pSrc[i];
 			//current_energy += *((pSrc->p) + i) * *((pSrc->p) + i);
 		}
@@ -54,7 +54,7 @@ public:
 
 
 		if (energy_diff > ENERGY_DIFF_THRESHOLD && current_energy > ENERGY_THRESHOLD){
-			memcpy(pDst, pSrc, blockSize*sizeof(*pDst));
+			memcpy(pDst, pSrc, blockSamples*sizeof(*pDst));
 			if (vad_idx == 30) vad_idx = 0;
 			vad_history[vad_idx] = true;
 			vad_idx++;
@@ -70,10 +70,10 @@ public:
 			if (count > 2){
 				//if more than 4 elements are true, then it is a voice
 				//copy the input to the output
-				memcpy(pDst, pSrc, blockSize*sizeof(*pDst));
+				memcpy(pDst, pSrc, blockSamples*sizeof(*pDst));
 			}
 			else{
-				memset(pDst, 0, blockSize*sizeof(*pDst));
+				memset(pDst, 0, blockSamples*sizeof(*pDst));
 			}
 			if (vad_idx == 30) vad_idx = 0;
 			vad_history[vad_idx] = false;

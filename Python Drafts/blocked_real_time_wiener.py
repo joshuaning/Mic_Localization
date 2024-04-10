@@ -127,7 +127,9 @@ class Wiener:
                 X_framed = fft(x_framed, self.NFFT)
 
                 ############# Wiener Filter ########################################
-                # Apply a priori wiener gains G to X_framed to get output S
+                # Apply a priori wiener gains G to X_framed to get output
+                
+
                 SNR_post = (np.abs(X_framed)**2/self.EW)/self.Sbb[:, channel]
                 G = Wiener.a_priori_gain(SNR_post)
                 S = X_framed * G
