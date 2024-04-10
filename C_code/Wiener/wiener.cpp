@@ -12,13 +12,15 @@
 #include <SerialFlash.h>
 #include "hann309.h"
 #include "hann882.h"
+#include <math.h>
+
 
 //Constants
 const int sampleRate = 44100;
 const int blockSamples = 128;		// 2.9 ms at 44100 Hz
 
 //User defined constants
-const int bufferBlocks = 0.5 * sampleRate / blockSamples; 	// 0.5 seconds of audio
+const int bufferBlocks = floor(0.5 * sampleRate / blockSamples); 	// 0.5 seconds of audio
 const int FRAME_SAMPLES = int(sampleRate * 0.02); 		//20ms frame, 7 ms for WER
 
 const int bufferSamples = bufferBlocks*blockSamples;
@@ -33,60 +35,44 @@ int blockCounter = 0;
 bool full = false;
 const int NFFT = 1024;
 const float SHIFT = 0.5;
-OFFSET =  int(SHIFT*FRAME_SAMPLES);
+const int OFFSET =  int(SHIFT*FRAME_SAMPLES);
 
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-// TODO: Using matlab to generate hanning window of Frame size
-// 0.02 (882 points) and 0.007 (309 points)
-// Precompute the window energy
-WINDOW = sg.hann(FRAME_SAMPLES)
-EW = np.sum(WINDOW)
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-const int frames = int( (bufferSamples - FRAME_SAMPLES) / OFFSET + 1)
+
+const int frames = int( (bufferSamples - FRAME_SAMPLES) / OFFSET + 1);
 const int framesSamples = blockSamples*frames;
-q15_t Sbb[NFFT] // matrix of size NFFT x number of channels(1)
-memset(Sbb, 0, sizeof(q15_array));
-WIENER_PASSTHRU = true
+q15_t Sbb[NFFT]; // matrix of size NFFT x number of channels(1)
+
+bool WIENER_PASSTHRU = true;
 
 bool recordingNoise = true;
 bool processingSignal = false;
 
 // Hann window code
 struct hann_window {
-  short *coeffs;
+  q15_t *coeffs;
   short num_coeffs;    // num_coeffs must be an even number, 4 or higher
+  int32_t EW;
 };
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// TODO: Using matlab to generate hanning window of Frame size
+// 0.02 (882 points) and 0.007 (309 points)
+// Precompute the window energy
 
 // index of initial window
 // Change to 0 for 20 ms frame size
-int start_idx = 0;
-
 //value to updated using Serial input
-int cur_idx = 0;
+int cur_idx = 0; // 0 for 20ms frame size, 1 for 7ms frame size
 struct hann_window window_list[] = {
-  {hann882  , 882},  		//20 ms frame size
-  {hann309  , 309},			//7 ms frame size
-  {NULL,   0}
+  {hann882  , 882, 5046117},  		//20 ms frame size
+  {hann309  , 309, 14433866},			//7 ms frame size
+  {NULL,   0, 0}
 };
+q15_t* WINDOW = window_list[cur_idx].coeffs;
+int32_t EW = window_list[cur_idx].EW;
 // end Hann window code
-
-
-//FFT instance:
-arm_rfft_instance_q15 irfft;
-arm_rfft_init_q15(&irfft, NFFT, 1, 1);
-arm_rfft_instance_q15 rfft;
-arm_rfft_init_q15(&rfft, NFFT, 0, 1);
-
-//Initializing Empty arrays
-for(int i = 0; i < NFFT; i++){
-	Sbb[i] = 0;
-}
-
-q15_t emptyArrayOfBlockSamples[blockSamples];
-for(int i = 0; i < blockSamples; i++){
-	emptyArrayOfBlockSamples[i] = 0;
-}
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 void Wiener::update(void)
 {
@@ -95,7 +81,10 @@ void Wiener::update(void)
 	audio_block_t *block, *b_new;
 
 	block = receiveReadOnly();
-	if (!block) return;
+	if (!block){
+		Serial.print("No blocks");
+		return;
+	} 
 
 	if(processingSignal){
 		release(block);
@@ -122,9 +111,16 @@ void Wiener::update(void)
 	//TODO: PERSON 1: Implement the Sbb array processing here
 	// Collect data for the Sbb noise array
 	if (recordingNoise){
+
+		if(blockCounter == 0){
+			//initialize
+			memset(Sbb, 0, sizeof(Sbb));
+		}
 		// check if the noise frames have been fully collected
 		if (blockCounter < bufferBlocks){
-			Serial.println("Recording noise");  
+			Serial.println("Recording noise"); 
+			Serial.println(blockCounter);
+			Serial.println(bufferBlocks);
 			memcpy(&(inputBuffer[blockCounter*blockSamples]), (q15_t *)block->data, blockSamples*sizeof(q15_t));
 		}
 		else{
@@ -133,71 +129,78 @@ void Wiener::update(void)
 			// end recording noise and start processing sbb matrix
 			for (int i = 0; i < frames; i++){
 				int i_min = i * OFFSET;
-				//int i_max = i * OFFSET + FRAME_SAMPLES;
 				
 				//Assume WINDOW is the array of hanning window
-				q15_t x_framed [window_size];
+				q15_t x_framed [FRAME_SAMPLES];
+				q15_t X_framed [NFFT];
+				q15_t abs [NFFT];
+				q15_t sq [NFFT];
+				q15_t scaledSbb [NFFT];
+				q15_t scaledSq [NFFT];
+				q15_t oneOveriPlusOne= 1/(i+1);
+				q15_t iOveriPlusOne= i/(i+1);
+
+				//FFT instance:
+				arm_rfft_instance_q15 rfft;
+				arm_rfft_init_q15(&rfft, NFFT, 1, 1);
+
 				/*
-				
 				void arm_mult_q15	(	const q15_t * 	pSrcA,
 										const q15_t * 	pSrcB,
 										q15_t * 		pDst,
-										uint32_t 		blockSize )
-				*/
+										uint32_t 		blockSize )*/
 				arm_mult_q15(WINDOW, inputBuffer + i_min, x_framed,  FRAME_SAMPLES);
 
 				/*
 				void arm_rfft_q15	(	const arm_rfft_instance_q15 * 	S,
 										q15_t * 	pSrc,
-										q15_t * 	pDst )	
-				*/
-				q15_t X_framed [window_size];
+										q15_t * 	pDst )*/
 				arm_rfft_q15(&rfft, x_framed, X_framed);
-				//void 	arm_abs_q15 (const q15_t *pSrc, q15_t *pDst, uint32_t blockSize)
-				
-				
-				
-				q15_t abs [window_size];
-				q15_t sq [window_size];
-				q15_t scaledSbb [window_size];
-				q15_t scaledSq [window_size];
 
-				q15_t iplusOne= i+1;
-				arm_abs_q15 (X_framed, abs, FRAME_SAMPLES);
-				arm_mult_q15(abs, abs, sq,  FRAME_SAMPLES);
-				arm_mult_q15(Sbb, &(iplusOne), scaledSbb,  FRAME_SAMPLES); //This is sus
-				arm_mult_q15(sq, &(iplusOne), scaledSq,  FRAME_SAMPLES); //This is sus
-				
+				//void 	arm_abs_q15 (const q15_t *pSrc, q15_t *pDst, uint32_t blockSize)
+				arm_abs_q15 (X_framed, abs, NFFT); // abs
+				arm_mult_q15(abs, abs, sq,  NFFT); // square
+				arm_mult_q15(Sbb, &(iOveriPlusOne), scaledSbb,  NFFT); //This is sus
+				arm_mult_q15(sq, &(oneOveriPlusOne), scaledSq,  NFFT); //This is sus
+
 				/*
 				void arm_add_q15	(	const q15_t * 	pSrcA,
 				const q15_t * 	pSrcB,
 				q15_t * 	pDst,
 				uint32_t 	blockSize 
-				)		
-*/
-				Sbb = arm_add_q15(scaledSbb, scaledSq, Sbb, NFFT);
+				)		*/
+				arm_add_q15(scaledSbb, scaledSq, Sbb, NFFT);
+				// Print the Sbb array for debug and verification
+				Serial.print("[");
+				for(int i = 0; i < NFFT; i++){
+					Serial.print(Sbb[i]);
+					Serial.print(", ");
+				}
+				Serial.print(']');
 
-		
 				
 			}
-
 
 			//reset the variables
 			processingSignal = false;
 			recordingNoise = false;
 			//if using blockCounter, don't forget to reset it back to 0
 			blockCounter = 0;
-
+			Serial.println("Noise array Sbb fully processed");
 		}
-		Serial.println("Noise array Sbb fully processed");
+		
+		blockCounter++;
+		release(block);
 		return; // return here so it will not go to the next part of the code
 	}
-	/*********************************************************************************************/
+
+
+	//--------------------------------------------------------------------------------------------//
 
 	// after collecting the Sbb array, we can now start processing the signal
 	b_new = allocate(); // allocate memory for the transmit block
-
-	/*********************************************************************************************/
+/*
+	//--------------------------------------------------------------------------------------------//
 	//TODO: PERSON 2: Implement the wiener processing here.
 
 	//First try processing the whole xframedBuffer at once, similar to the python implementation
@@ -212,7 +215,7 @@ void Wiener::update(void)
 	
 	//This code works with the assumption that the signal is coming in at the same rate
 	//as we are transmitting it out, which I think is a fair assumption
-	/*********************************************************************************************/
+	//--------------------------------------------------------------------------------------------//
 
 	// Code to update the Stored signal xframedBuffer
 	// It might be safer to use two xframedBuffer instead of one xframedBuffer:
@@ -223,6 +226,12 @@ void Wiener::update(void)
 	if (readyToProcess){
 		processingSignal = true;
 		serial.println("Start Processing Signal")
+
+		//FFT instance:
+		arm_rfft_instance_q15 irfft;
+		arm_rfft_init_q15(&irfft, NFFT, 1, 1);
+		arm_rfft_instance_q15 rfft;
+		arm_rfft_init_q15(&rfft, NFFT, 0, 1);
 
 		
 		q15_t xframedBuffer[FRAME_SAMPLES];
@@ -292,7 +301,7 @@ void Wiener::update(void)
 		for(int i = 0; i < FRAME_SAMPLES; ++i){
 			outputBuffer[i_min + i] += xframedbuffer[i];
 		}
-		/*******  END WIENER DATA PROCESSING *******/
+		//----------------------------- END WIENER PROCESSING ------------------------------------//
 	}
 
 		processingSignal = false;
@@ -308,6 +317,7 @@ void Wiener::update(void)
 	transmit(b_new);
 
 	for(int i = 0; i < N; ++i) {outputBuffer[i] = 0;} // reset the output buffer
+	*/
 
 	// don't forget to increment the blockCounter
 	blockCounter++;
