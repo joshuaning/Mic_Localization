@@ -106,7 +106,7 @@ void pad_with_zeros(float32_t *pSrc, float32_t *pDst, uint32_t srcLength, uint32
     }
 }
 
-void wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, uint32_t bufferSamples, uint32_t FRAME_SAMPLES, uint32_t OFFSET, float32_t *Sbb, arm_cfft_instance_f32 *S) {
+void wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float32_t *Sbb, arm_cfft_instance_f32 *S) {
     uint32_t frames = (bufferSamples - FRAME_SAMPLES) / OFFSET + 1;
     float32_t xframedBuffer[FRAME_SAMPLES];
     float32_t fftBuffer[2 * S->fftLen];
@@ -182,7 +182,7 @@ void wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, uint32_t buff
     }
 }
 
-void welchsPeriodogram(float32_t *x, uint32_t length, uint32_t *noise_start, uint32_t *noise_end, uint32_t FRAME_SAMPLES, uint32_t OFFSET, float32_t *Sbb, arm_cfft_instance_f32 *S) {
+void welchsPeriodogram(float32_t *x, uint32_t *noise_start, uint32_t *noise_end, float32_t *Sbb, arm_cfft_instance_f32 *S) {
     float32_t WINDOW[FRAME_SAMPLES];
     arm_hann_f32(WINDOW, FRAME_SAMPLES);
 
@@ -191,7 +191,7 @@ void welchsPeriodogram(float32_t *x, uint32_t length, uint32_t *noise_start, uin
         EW += WINDOW[i];
     }
 
-    uint32_t frames = (length - FRAME_SAMPLES) / OFFSET + 1;
+    uint32_t frames = (length - FRAME_SAMPLES) / OFFSET + 1; // delete?
 
     uint32_t noise_frames = (*noise_end - *noise_start - FRAME_SAMPLES) / OFFSET + 1;
 
@@ -285,7 +285,7 @@ void Wiener::update(void)
 				int i_min = i * OFFSET;
                 int i_max = i * OFFSET + FRAME_SAMPLES;
 				float32_t x_framed [NFFT*2]; // NFFT*2 because of the complex numbers... we will just interpolate with 0s; //memset(x_framed, 0, sizeof(x_framed)); // do we need this if it gets overwritten anyway?
-                welchsPeriodogram(inputBuffer, bufferSamples, inputBuffer + i_min, inputBuffer + i_max, FRAME_SAMPLES, OFFSET, Sbb, &S); // TODO are these the right input arguments?
+                welchsPeriodogram(inputBuffer, inputBuffer + i_min, inputBuffer + i_max, Sbb, &S); // TODO are these the right input arguments?
 				Serial.print("[");
 				for(int i = 0; i < NFFT; i++){
 					Serial.print(Sbb[i]);
@@ -342,7 +342,7 @@ void Wiener::update(void)
     Serial.println("Start Processing Signal");
 
     // call Wiener filter
-    wienerFilter(inputBuffer, outputBuffer, bufferSamples, FRAME_SAMPLES, OFFSET, Sbb, &S);
+    //wienerFilter(inputBuffer, outputBuffer, bufferSamples, FRAME_SAMPLES, OFFSET, Sbb, &S);
 
 
     processingSignal = false;
@@ -351,7 +351,7 @@ void Wiener::update(void)
     }
 
 		
-}
+
 
 	// copy the recieved input block into the inputBuffer
 	memcpy(&(inputBuffer[blockCounter*blockSamples]), ((q15_t *))block->data, blockSamples*sizeof(q15_t));

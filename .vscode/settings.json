@@ -4,6 +4,7 @@
         "string": "cpp",
         "string_view": "cpp",
         "vector": "cpp",
-        "__config": "cpp"
+        "__config": "cpp",
+        "cstdint": "cpp"
     }
 }
