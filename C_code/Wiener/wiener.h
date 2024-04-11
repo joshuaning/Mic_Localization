@@ -23,7 +23,7 @@ public:
 
 	//User defined constants
 	static const int bufferBlocks = floor(0.5 * sampleRate / blockSamples); 	// 0.5 seconds of audio
-	static const int FRAME_SAMPLES = int(sampleRate * 0.02); 		//20ms frame, 7 ms for WER
+	static const int FRAME_SAMPLES = int(sampleRate * 0.023); 		//20ms frame, 7 ms for WER
 
 	static const int bufferSamples = bufferBlocks*blockSamples;
 
