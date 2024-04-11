@@ -75,8 +75,9 @@ int32_t EW = window_list[cur_idx].EW;
 // end Hann window code
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-
-void elementwise_mod_sq(float32_t *pSrc, float32_t *pDst, uint32_t length) {
+//magnitude squared
+void elementwise_mag_sq(float32_t *pSrc, float32_t *pDst, uint32_t length) {
+    // assumes that pSrc is twice the legnth of pDst (output of cfft) 
     for (uint32_t i = 0; i < length; i += 2) {
         float32_t real = pSrc[i];
         float32_t imag = pSrc[i + 1];
@@ -84,12 +85,15 @@ void elementwise_mod_sq(float32_t *pSrc, float32_t *pDst, uint32_t length) {
     }
 }
 
+//This make real array into complex array
 void interpolate_with_zeros(float32_t *pSrc, float32_t *pDst, uint32_t length) {
+    // assumes that pDst is twice the legnth of the pSrc
     for (uint32_t i = 0; i < length; i++) {
         pDst[2 * i] = pSrc[i];
         pDst[2 * i + 1] = 0;
     }
 }
+
 
 void pad_with_zeros(float32_t *pSrc, float32_t *pDst, uint32_t srcLength, uint32_t dstLength) {
     if (srcLength > dstLength) {
@@ -109,8 +113,8 @@ void pad_with_zeros(float32_t *pSrc, float32_t *pDst, uint32_t srcLength, uint32
 void wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float32_t *Sbb, arm_cfft_instance_f32 *S) {
     uint32_t frames = (bufferSamples - FRAME_SAMPLES) / OFFSET + 1;
     float32_t xframedBuffer[FRAME_SAMPLES];
-    float32_t fftBuffer[2 * S->fftLen];
-    float32_t G[S->fftLen];
+    float32_t fftBuffer[2 * NFFT];
+    float32_t G[NFFT];
 
     // Instantiate Hann window and compute EW
     float32_t WINDOW[FRAME_SAMPLES];
@@ -132,39 +136,39 @@ void wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float32_t *Sb
         // Temporal framing with Hanning window
         arm_mult_f32(WINDOW, xframedBuffer, xframedBuffer, FRAME_SAMPLES);
 
-        // Zero padding and interpolation
-        pad_with_zeros(xframedBuffer, fftBuffer, FRAME_SAMPLES, 2 * S->fftLen);
+        // Zero padding and inteNFFT
+        pad_with_zeros(xframedBuffer, fftBuffer, FRAME_SAMPLES, 2 * NFFT);
 
         // FFT
         arm_cfft_f32(S, fftBuffer, 0, 1);
 
         // Calculate the Wiener gain
-        float32_t X_framed_abs_sq[S->fftLen];
-        float32_t temp[S->fftLen];
-        float32_t snrPost[S->fftLen];
-        float32_t one_array[S->fftLen];
-        float32_t SNR_plus_one[S->fftLen];
+        float32_t X_framed_abs_sq[NFFT];
+        float32_t temp[NFFT];
+        float32_t snrPost[NFFT];
+        float32_t one_array[NFFT];
+        float32_t SNR_plus_one[NFFT];
 
         // Calculate the element-wise modulus squared of X_framed
-        elementwise_mod_sq(fftBuffer, X_framed_abs_sq, 2 * S->fftLen);
+        elementwise_mag_sq(fftBuffer, X_framed_abs_sq, 2 * NFFT);
 
         // Divide the squared values by EW
-        arm_scale_f32(X_framed_abs_sq, 1.0f / EW, temp, S->fftLen);
+        arm_scale_f32(X_framed_abs_sq, 1.0f / EW, temp, NFFT);
 
         // Divide the result by Sbb
-        arm_divide_f32(temp, Sbb, snrPost, S->fftLen);
+        arm_divide_f32(temp, Sbb, snrPost, NFFT);
 
         // Fill the one_array with the constant value 1
-        arm_fill_f32(1.0f, one_array, S->fftLen);
+        arm_fill_f32(1.0f, one_array, NFFT);
 
         // Add 1 to each element of SNR_post
-        arm_add_f32(snrPost, one_array, SNR_plus_one, S->fftLen);
+        arm_add_f32(snrPost, one_array, SNR_plus_one, NFFT);
 
         // Divide SNR_post by (SNR_post + 1) to obtain G
-        arm_divide_f32(snrPost, SNR_plus_one, G, S->fftLen);
+        arm_divide_f32(snrPost, SNR_plus_one, G, NFFT);
 
         // Apply gain
-        for (uint32_t i = 0; i < S->fftLen; ++i) {
+        for (uint32_t i = 0; i < NFFT; ++i) {
             fftBuffer[2 * i] *= G[i];
             fftBuffer[2 * i + 1] *= G[i];
         }
@@ -173,7 +177,7 @@ void wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float32_t *Sb
         arm_cfft_f32(S, fftBuffer, 1, 1);
 
         // Estimated signals at each frame normalized by the shift value
-        arm_scale_f32(fftBuffer, 1.0f / S->fftLen, fftBuffer, 2 * S->fftLen);
+        arm_scale_f32(fftBuffer, 1.0f / NFFT, fftBuffer, 2 * NFFT);
 
         // Overlap and add
         for (uint32_t i = 0; i < FRAME_SAMPLES; ++i) {
@@ -182,7 +186,7 @@ void wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float32_t *Sb
     }
 }
 
-void welchsPeriodogram(float32_t *x, uint32_t *noise_start, uint32_t *noise_end, float32_t *Sbb, arm_cfft_instance_f32 *S) {
+void welchsPeriodogram(float32_t *x, float32_t *Sbb, arm_cfft_instance_f32 *S) {
     float32_t WINDOW[FRAME_SAMPLES];
     arm_hann_f32(WINDOW, FRAME_SAMPLES);
 
@@ -191,32 +195,32 @@ void welchsPeriodogram(float32_t *x, uint32_t *noise_start, uint32_t *noise_end,
         EW += WINDOW[i];
     }
 
-    uint32_t frames = (length - FRAME_SAMPLES) / OFFSET + 1; // delete?
-
-    uint32_t noise_frames = (*noise_end - *noise_start - FRAME_SAMPLES) / OFFSET + 1;
-
-    for (uint32_t i = 0; i < S->fftLen; i++) {
+    for (uint32_t i = 0; i < NFFT; i++) {
         Sbb[i] = 0.0f;
     }
 
     float32_t x_framed[FRAME_SAMPLES];
-    float32_t X_framed[2 * S->fftLen];
-    float32_t X_framed_abs_sq[S->fftLen];
+    float32_t X_framed[2 * NFFT];
+    float32_t X_framed_abs_sq[NFFT];
 
-    for (uint32_t frame = 0; frame < noise_frames; frame++) {
-        uint32_t i_min = frame * OFFSET + *noise_start;
-        uint32_t i_max = frame * OFFSET + FRAME_SAMPLES + *noise_start;
+    for (uint32_t frame = 0; frame < frames; frame++) {
+        uint32_t i_min = frame * OFFSET;
+        uint32_t i_max = frame * OFFSET + FRAME_SAMPLES;
+
+        //arm_mult_f32(WINDOW, x + frame + i_min, xframedBuffer, FRAME_SAMPLES);
 
         for (uint32_t i = i_min, j = 0; i < i_max; i++, j++) {
             x_framed[j] = x[i] * WINDOW[j];
         }
 
-        pad_with_zeros(x_framed, X_framed, FRAME_SAMPLES, 2 * S->fftLen);
+        pad_with_zeros(x_framed, X_framed, FRAME_SAMPLES, 2 * NFFT);
+
+        //arm_cfft_f32 (const arm_cfft_instance_f32 *S, float32_t *p1, uint8_t ifftFlag, uint8_t bitReverseFlag), p1 has length 2*fftLen (it is complex) 
         arm_cfft_f32(S, X_framed, 0, 1);
 
-        elementwise_mod_sq(X_framed, X_framed_abs_sq, 2 * S->fftLen);
+        elementwise_mag_sq(X_framed, X_framed_abs_sq, 2 * NFFT);
 
-        for (uint32_t i = 0; i < S->fftLen; i++) {
+        for (uint32_t i = 0; i < NFFT; i++) {
             Sbb[i] = frame * Sbb[i] / (frame + 1) + X_framed_abs_sq[i] / (frame + 1);
         }
     }
@@ -285,7 +289,7 @@ void Wiener::update(void)
 				int i_min = i * OFFSET;
                 int i_max = i * OFFSET + FRAME_SAMPLES;
 				float32_t x_framed [NFFT*2]; // NFFT*2 because of the complex numbers... we will just interpolate with 0s; //memset(x_framed, 0, sizeof(x_framed)); // do we need this if it gets overwritten anyway?
-                welchsPeriodogram(inputBuffer, inputBuffer + i_min, inputBuffer + i_max, Sbb, &S); // TODO are these the right input arguments?
+                welchsPeriodogram(inputBuffer, Sbb, &S); // TODO are these the right input arguments?
 				Serial.print("[");
 				for(int i = 0; i < NFFT; i++){
 					Serial.print(Sbb[i]);
