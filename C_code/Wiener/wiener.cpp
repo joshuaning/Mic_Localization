@@ -7,10 +7,11 @@
 
 //Constants
 const int sampleRate = 44100;
-const int blockSize = 128;
+const int blockSize = 128; // units of 'samples'
+
 
 //User defined constants
-const int BufferSize = 0.5 * sampleRate / blockSize; 	// 0.5 seconds of audio
+const int BufferSize = 0.5 * sampleRate / blockSize; 	// 0.5 seconds of audio, units of 'blocks'
 const int FRAME = int(sampleRate * 0.02); 		//20ms frame
 
 
@@ -18,7 +19,7 @@ const int FRAME = int(sampleRate * 0.02); 		//20ms frame
 static int count = 0;
 static bool switcher = true;
 int16_t buff[BufferSize * blockSize];
-int counter = 0;
+int counter = 0; // always counting in blocks
 bool full = false;
 const int NFFT = 1024;
 const float SHIFT = 0.5;
@@ -31,7 +32,7 @@ WINDOW = sg.hann(FRAME)
 EW = np.sum(WINDOW)
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-const int frames = int( (BufferSize - FRAME) / OFFSET + 1)
+const int frames = int( (BufferSize*blockSize - FRAME) / OFFSET + 1)
 const int framesSamples = blockSize*frames;
 int Sbb[NFFT] // matrix of size NFFT x number of channels(1)
 const bool recordingNoise = true;
