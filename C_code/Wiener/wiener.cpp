@@ -22,6 +22,8 @@ static int count = 0;
 static bool switcher = true;
 float32_t inputBuffer[Wiener::bufferSamples];
 float32_t outputBuffer[Wiener::bufferSamples];
+q15_t outputBuffer_q[Wiener::bufferSamples];
+float floatBlock [Wiener::blockSamples];
 int blockCounter = 0;
 bool full = false;
 const uint16_t NFFT = 1024;
@@ -75,21 +77,21 @@ float find_max_of_OutBuffer(){
 }
 
 void printArr(float32_t *arr, uint32_t sz){
-	Serial.print("float[");
+	Serial.print("[");
 	for(uint32_t i = 0; i<sz; i++){
 		Serial.print(arr[i], 4);
 		Serial.print(", ");
 	}
-	Serial.print("]");
+	Serial.println("]");
 }
 
-void printArr(int16_t *arr, uint32_t sz){
-	Serial.print("int16_t[");
-	for(uint32_t i = 0; i<sz; i++){
+void printArr(q15_t *arr, int sz){
+	Serial.print("[");
+	for(int i = 0; i<sz; i++){
 		Serial.print(arr[i]);
 		Serial.print(", ");
 	}
-	Serial.print("]");
+	Serial.println("]");
 }
 
 //magnitude squared
@@ -155,7 +157,7 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
         // for (uint32_t i = i_min; i < i_max; ++i) { // replaced on line 158
         //    xframedBuffer[i - i_min] = inputBuffer[i];
         // }
-
+		Serial.println("inputBuffer [0]");
         //printArr(inputBuffer, bufferSamples);
 
         // Temporal framing with Hanning window
@@ -165,31 +167,31 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
 		//Serial.println("Window: ");
 		//printArr(WINDOW, Wiener::FRAME_SAMPLES);
 		
-		Serial.println("constructing xframedBuffer (already windowed): ");
+		//Serial.println("constructing xframedBuffer (already windowed): ");
         for (uint32_t i = i_min, j = 0; i < i_max; i++, j++) {
             xframedBuffer[j] = inputBuffer[i] * WINDOW[j];
         }
 
-		Serial.println("xframedBuffer immediately after population: ");
+		Serial.println("xframedBuffer immediately after population(after windowing): [1]");
 		//printArr(xframedBuffer, Wiener::FRAME_SAMPLES);
 
-		Serial.println("wienerFilter: interpolate the frame");
+		//Serial.println("wienerFilter: interpolate the frame");
         Wiener::interpolate_with_zeros(xframedBuffer, x_framed_interpolated_with_zeros, Wiener::FRAME_SAMPLES); 
-		Serial.println("interpolated xframedBuffer");
+		//Serial.println("interpolated xframedBuffer");
 		//printArr(x_framed_interpolated_with_zeros, 2*Wiener::FRAME_SAMPLES);
 
         // Zero padding and inteNFFT
-		Serial.println("wienerFilter: Zero padding the frame");
+		//Serial.println("wienerFilter: Zero padding the frame");
         Wiener::pad_with_zeros(x_framed_interpolated_with_zeros, fftBuffer, 2*Wiener::FRAME_SAMPLES, 2*NFFT);
-		Serial.println("interpolated, then padded, xframedBuffer");
+		//Serial.println("interpolated, then padded, xframedBuffer");
 		//printArr(fftBuffer, 2*NFFT);
         
 
         // FFT
         //arm_cfft_f32(S, fftBuffer, 0, 1);
-		Serial.println("wienerFilter: FFT the frame");
+		//Serial.println("wienerFilter: FFT the frame");
 		arm_cfft_radix4_f32(S, fftBuffer);
-		Serial.println("frame post-FFT");
+		Serial.println("frame post-FFT: [2]");
 		//printArr(fftBuffer, 2*NFFT);
 
         // Calculate the Wiener gain
@@ -200,27 +202,34 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
         float32_t SNR_plus_one[NFFT];
 
         // Calculate the element-wise modulus squared of X_framed
-		Serial.println("wienerFilter: magnitude square the frame (size returns to NFFT from 2*NFFT)");
-        Wiener::elementwise_mag_sq(fftBuffer, X_framed_abs_sq, 2 * NFFT);
+		Serial.println("wienerFilter: magnitude square the frame (size returns to NFFT from 2*NFFT): [3]");
+		Wiener::elementwise_mag_sq(fftBuffer, X_framed_abs_sq, 2 * NFFT);
+        //printArr(X_framed_abs_sq, NFFT);
 
         // Divide the squared values by EW
-		Serial.println("Divide by EW for the frame");
+		Serial.println("Divide by EW for the frame [4]");
         arm_scale_f32(X_framed_abs_sq, 1.0f / EW, temp, NFFT);
+        //printArr(temp, NFFT);
 
         // Divide the result by Sbb
-		Serial.println("Divide result by Sbb");
+		Serial.println("Divide result by Sbb [5]");
         Wiener::elementwise_divide(temp, Sbb, snrPost, NFFT);
+		//printArr(snrPost, NFFT);
 
         // Fill the one_array with the constant value 1
         arm_fill_f32(1.0f, one_array, NFFT);
 
         // Add 1 to each element of SNR_post
         arm_add_f32(snrPost, one_array, SNR_plus_one, NFFT);
+		Serial.println("Add SNR_post by 1 [6]");
+		//printArr(SNR_plus_one, NFFT);
 
         // Divide SNR_post by (SNR_post + 1) to obtain G
         Wiener::elementwise_divide(snrPost, SNR_plus_one, G, NFFT);
+		Serial.println("Divide SNR_post by (SNR_post + 1) to obtain G [7]");
+		//printArr(G, NFFT);
 
-		Serial.println("G:");
+		//Serial.println("G:");
 		//printArr(G, NFFT);
 
         // Apply gain
@@ -229,16 +238,21 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
             fftBuffer[2 * i + 1] *= G[i];
         }
 
+		Serial.println("Apply gain to fft buffer [8]");
+		//printArr(fftBuffer, NFFT*2);
+
         // IFFT
         //arm_cfft_f32(S, fftBuffer, 1, 1);
 		arm_cfft_radix4_f32(IS, fftBuffer); // IS is ifft object
-		Serial.println("post-ifft");
-		//printArr(fftBuffer, NFFT);
+		Serial.println("post-ifft [9]");
+		//printArr(fftBuffer, NFFT*2);
 
         // Estimated signals at each frame normalized by the shift value
 		//arm_scale_f32 (const float32_t *pSrc, float32_t scale, float32_t *pDst, uint32_t blockSize)
         //arm_scale_f32(fftBuffer, 1.0f / NFFT, fftBuffer, 2 * NFFT);
 		arm_scale_f32(fftBuffer, SHIFT, fftBuffer, 2 * NFFT);
+		Serial.println("scaling by shift [10]");
+		//printArr(fftBuffer, NFFT*2);
 
         // Overlap and add
 
@@ -246,9 +260,12 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
 			outputBuffer[i_min + i] += fftBuffer[2 * i];
         }
 
+		Serial.println("output buffer of the frame [11]");
+		//printArr(outputBuffer + i_min,  Wiener::FRAME_SAMPLES);
     }
 	float32_t outmax = find_max_of_OutBuffer();
 	arm_scale_f32(outputBuffer, 1/outmax, outputBuffer,Wiener::bufferSamples);
+	arm_float_to_q15(outputBuffer, outputBuffer_q, Wiener::bufferSamples);
 }
 
 void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_instance_f32* S, float32_t *WINDOW, float32_t EW) {
@@ -392,8 +409,12 @@ void Wiener::update(void){
 			// Serial.println(blockCounter);
 			// Serial.println(Wiener::bufferBlocks);
 			//arm_q15_to_float (const q15_t *pSrc, float32_t *pDst, uint32_t blockSize)
-			
-			arm_q15_to_float (block->data, inputBuffer + blockCounter*Wiener::blockSamples, Wiener::blockSamples);
+
+			arm_q15_to_float (block->data, floatBlock, Wiener::blockSamples);
+			//void *memcpy(void *dest, const void * src, size_t n)
+			memcpy(inputBuffer + blockCounter*Wiener::blockSamples, floatBlock, sizeof(floatBlock));
+			//std::copy(floatBlock, inputBuffer + blockCounter*Wiener::blockSamples, inputBuffer + (blockCounter+1)*Wiener::blockSamples);
+
 			
 			//if (blockCounter % 40 == 0){
 			//	Serial.println("block->data: ");
@@ -416,6 +437,9 @@ void Wiener::update(void){
 			//*/
 
 			welchsPeriodogram(inputBuffer, Sbb, &S, WINDOW, EW); 
+			// Serial.println("Sbb buffer after Periodogram");
+			// printArr(Sbb, NFFT);
+
             /*
             Serial.print("[");
             for(int i = 0; i < NFFT; i++){
@@ -432,6 +456,7 @@ void Wiener::update(void){
 			//if using blockCounter, don't forget to reset it back to 0
 			blockCounter = 0;
 			Serial.println("Noise array Sbb fully processed");
+			for(int i = 0; i < bufferSamples; ++i) {outputBuffer[i] = 0;} // reset the output buffer
 		}
 
 		blockCounter++;
@@ -470,6 +495,7 @@ void Wiener::update(void){
 	// sure that we are not overwriting the signal that is not yet processed
 	bool readyToProcess = blockCounter == Wiener::bufferBlocks;
 	if (readyToProcess) {
+		//memcpy(&inputBuffer, truth, sizeof(truth));	
 		//Serial.println("readyToProcess");
 		processingSignal = true;
 		//Serial.println("Start Processing Signal");
@@ -481,6 +507,9 @@ void Wiener::update(void){
 		Serial.println("input buffer before passing to Wiener");
 		//printArr(inputBuffer, Wiener::bufferSamples);
 		wienerFilter(inputBuffer, outputBuffer, Sbb, &S, &IS, WINDOW, EW);
+		Serial.println("output buffer after Wiener");
+		// printArr(outputBuffer, Wiener::bufferSamples);
+		// delay(2000);
 
 
 		processingSignal = false;
@@ -493,7 +522,9 @@ void Wiener::update(void){
 
 	// copy the recieved input block into the inputBuffer
 	//memcpy(&(inputBuffer[blockCounter*Wiener::blockSamples]), (float32_t *)block->data, Wiener::blockSamples*sizeof(float32_t));
-	arm_q15_to_float (block->data, inputBuffer + blockCounter*Wiener::blockSamples, Wiener::blockSamples);
+	arm_q15_to_float (block->data, floatBlock, Wiener::blockSamples);
+	memcpy(inputBuffer + blockCounter*Wiener::blockSamples, floatBlock, sizeof(floatBlock));
+	//std::copy(floatBlock, outputBuffer_q + blockCounter*Wiener::blockSamples, outputBuffer_q + (blockCounter+1)*Wiener::blockSamples);
 
 	// transmit the relevant blocks worth of samples from outputBuffer (to playback)
 
@@ -504,12 +535,17 @@ void Wiener::update(void){
 	else{
 		//Serial.println("Copy output buff to b_new");
 		//arm_float_to_q15 (const float32_t *pSrc, q15_t *pDst, uint32_t blockSize)
-		arm_float_to_q15(outputBuffer + blockCounter*Wiener::blockSamples, b_new->data, Wiener::blockSamples);
-		//std::copy(outputBuffer + blockCounter*Wiener::blockSamples, outputBuffer + (blockCounter+1)*Wiener::blockSamples, b_new->data);
+		//arm_float_to_q15(outputBuffer + blockCounter*Wiener::blockSamples, b_new->data, Wiener::blockSamples);
+		std::copy(outputBuffer_q + blockCounter*Wiener::blockSamples, outputBuffer_q + (blockCounter+1)*Wiener::blockSamples, b_new->data);
+		Serial.println("b_new q15");
+		//printArr(b_new->data, Wiener::blockSamples);
 		transmit(b_new);
-		// printArr(b_new->data, Wiener::blockSamples); 
+		
 		Serial.println("Done transmitting b_new");
+		//std::copy(outputBuffer + blockCounter*Wiener::blockSamples, outputBuffer + (blockCounter+1)*Wiener::blockSamples, b_new->data);
 	}
+	
+
 	for(int i = 0; i < bufferSamples; ++i) {outputBuffer[i] = 0;} // reset the output buffer
 	Serial.println("Done resetting output array");
 	

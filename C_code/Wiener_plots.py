@@ -8,6 +8,36 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import ast  # Used to safely evaluate strings containing Python literals
+import logging
+
+def plot_two_arrays(arr1, arr2, label1, label2):
+    """
+    Plots two arrays on the same plot. The first array is plotted with a solid line,
+    and the second array is plotted with a dotted line.
+    
+    Parameters:
+        arr1 (array-like): The first dataset.
+        arr2 (array-like): The second dataset, plotted with a dotted line.
+    """
+    # Ensure the arrays can be plotted on the same graph
+    if len(arr1) != len(arr2):
+        raise ValueError("Both arrays must be of the same length to plot them together.")
+    
+    # Create the plot
+    plt.figure(figsize=(10, 5))  # Set the figure size
+    plt.plot(arr1, label=label1)  # Solid line for the first array
+    plt.plot(arr2, label=label2, linestyle=':')  # Dotted line for the second array
+
+    # Adding titles and labels
+    plt.xlabel('Index')
+    plt.ylabel('Value')
+    
+    # Adding a legend to describe which line is which
+    plt.legend()
+    
+    # Show the plot
+    plt.show()
+
 
 def plot_frame_data_from_numpy(frame_index, folder='frames'):
     """
@@ -41,7 +71,33 @@ def plot_frame_data_from_numpy(frame_index, folder='frames'):
     plt.tight_layout()
     plt.show()
 
+def read_python_debug_data(data_type, frame=None, debug_folder="python_debug_logs"):
+    """
+    Reads the debug data from the .npy files.
 
+    Args:
+        data_type (str): The type of data to read (e.g., "x_framed", "fft_X_framed", 
+        "SNR_post", "G", "S", "temp_s_est", "s_est_final").
+        frame (int, optional): The frame number (required for frame-specific data).
+        debug_folder (str): The path to the main debug folder.
+
+    Returns:
+        numpy.ndarray: The loaded data array.
+    """
+    if data_type in ["x_framed", "fft_X_framed", "temp_s_est"]:
+        if frame is None:
+            raise ValueError(f"Frame number is required for data type '{data_type}'.")
+        file_path = os.path.join(debug_folder, data_type, f"{data_type}_frame_{frame}.npy")
+    elif data_type in ["SNR_post", "G", "S"]:
+        if frame is None:
+            raise ValueError(f"Frame number is required for data type '{data_type}'.")
+        file_path = os.path.join(debug_folder, "wiener_filter", f"{data_type}_frame_{frame}.npy")
+    elif data_type == "s_est_final":
+        file_path = os.path.join(debug_folder, "s_est_final_postnormalization.npy") #changed to postnormalization
+    else:
+        raise ValueError(f"Invalid data type: {data_type}")
+
+    return np.load(file_path)
 
 
 def record_data_to_numpy(frame, x_framed, X_framed, power_spectrum, Sbb, folder='frames'):
@@ -122,6 +178,203 @@ def welchs_periodogram(x, T_NOISE = (0, 22016/44100)):
 
     return Sbb, N_NOISE
 
+class Wiener:
+    """
+    Class made for wiener filtering based on the article "Improved Signal-to-Noise Ratio Estimation for Speech
+    Enhancement".
+
+    Reference :
+        Cyril Plapous, Claude Marro, Pascal Scalart. Improved Signal-to-Noise Ratio Estimation for Speech
+        Enhancement. IEEE Transactions on Audio, Speech and Language Processing, Institute of Electrical
+        and Electronics Engineers, 2006.
+        
+    """
+
+    def __init__(self, fs, sig, Sbb, N_NOISE):
+        """
+        Input :
+            WAV_FILE
+            T_NOISE : float, Time in seconds /!\ Only works if stationnary noise is at the beginning of x /!\
+            
+        """
+        # Constants are defined here
+        self.FS = fs
+        self.x = sig
+        self.NFFT, self.SHIFT = 2**10, 0.5 #0.5 
+        self.FRAME = int(0.023*self.FS) # Frame of 0.20 ms
+
+        # Computes the offset and number of frames for overlapp - add method.
+        self.OFFSET = int(self.SHIFT*self.FRAME)
+
+        # Hanning window and its energy Ew
+        self.WINDOW = sg.hann(self.FRAME)
+        self.EW = np.sum(self.WINDOW)
+
+        length = self.x.shape[0] 
+        self.frames = np.arange((length - self.FRAME) // self.OFFSET + 1)
+        # Evaluating noise psd with n_noise
+        self.Sbb = Sbb
+        self.N_NOISE = N_NOISE
+
+
+    @staticmethod
+    def a_priori_gain(SNR):
+        """
+        Function that computes the a priori gain G of Wiener filtering.
+        
+            Input :
+                SNR : 1D np.array, Signal to Noise Ratio
+            Output :
+                G : 1D np.array, gain G of Wiener filtering
+                
+        """
+        G = SNR/(SNR + 1)
+        return G
+
+    def wiener(self):
+        """
+        Function that returns the estimated speech signal using overlap-add method
+        by applying a Wiener Filter on each frame to the noisy input signal.
+
+        Output:
+            s_est: 1D np.array, Estimated speech signal
+        """
+
+        # Create a folder for debug logs
+        debug_folder = "python_debug_logs"
+        os.makedirs(debug_folder, exist_ok=True)
+
+        # Create subfolders for each type of data
+        x_framed_folder = os.path.join(debug_folder, "x_framed")
+        os.makedirs(x_framed_folder, exist_ok=True)
+
+        X_framed_folder = os.path.join(debug_folder, "fft_X_framed")
+        os.makedirs(X_framed_folder, exist_ok=True)
+
+        wiener_filter_folder = os.path.join(debug_folder, "wiener_filter")
+        os.makedirs(wiener_filter_folder, exist_ok=True)
+
+        temp_s_est_folder = os.path.join(debug_folder, "temp_s_est")
+        os.makedirs(temp_s_est_folder, exist_ok=True)
+
+        # Configure logging
+        logging.basicConfig(level=logging.INFO,
+                            format='%(asctime)s - %(message)s',
+                            datefmt='%Y-%m-%d %H:%M:%S')
+
+        # Set NumPy print options to display the entire array
+        np.set_printoptions(threshold=np.inf)
+
+        # Initializing estimated signal s_est
+        s_est = np.zeros(self.x.shape)
+
+        for frame in self.frames:
+            ############# Initializing Frame ###################################
+            # Temporal framing with a Hanning window
+            i_min, i_max = frame * self.OFFSET, frame * self.OFFSET + self.FRAME
+            x_framed = self.x[i_min:i_max] * self.WINDOW
+
+            # Write debug log for x_framed
+            debug_file = os.path.join(x_framed_folder, f"x_framed_frame_{frame}.log")
+            with open(debug_file, "w") as f:
+                f.write(f"Frame: {frame}\n")
+                f.write(f"i_min: {i_min}, i_max: {i_max}\n")
+                f.write(f"x_framed shape: {x_framed.shape}\n")
+                f.write(f"x_framed dtype: {x_framed.dtype}\n")
+                f.write(f"x_framed:\n{x_framed}\n")
+                np.save(os.path.join(x_framed_folder, f"x_framed_frame_{frame}.npy"), x_framed)
+
+            # Zero padding x_framed
+            X_framed = fft(x_framed, self.NFFT)
+
+            # Write debug log for X_framed
+            debug_file = os.path.join(X_framed_folder, f"fft_X_framed_frame_{frame}.log")
+            with open(debug_file, "w") as f:
+                f.write(f"Frame: {frame}\n")
+                f.write(f"X_framed shape: {X_framed.shape}\n")
+                f.write(f"X_framed dtype: {X_framed.dtype}\n")
+                f.write(f"X_framed:\n{X_framed}\n")
+                np.save(os.path.join(X_framed_folder, f"fft_X_framed_frame_{frame}.npy"), X_framed)
+
+            ############# Wiener Filter ########################################
+            # Apply a priori wiener gains G to X_framed to get output
+            SNR_post = (np.abs(X_framed) ** 2 / self.EW) / self.Sbb
+            G = Wiener.a_priori_gain(SNR_post)
+            S = X_framed * G
+
+            # Write debug log for Wiener Filter
+            debug_file = os.path.join(wiener_filter_folder, f"wiener_filter_frame_{frame}.log")
+            with open(debug_file, "w") as f:
+                # Table of Contents
+                f.write("Table of Contents:\n")
+                f.write("------------------\n")
+                f.write(f"1. SNR_post - Shape: {SNR_post.shape}, Dtype: {SNR_post.dtype}, Preview: {SNR_post[:5]}\n")
+                f.write(f"2. G - Shape: {G.shape}, Dtype: {G.dtype}, Preview: {G[:5]}\n")
+                f.write(f"3. S - Shape: {S.shape}, Dtype: {S.dtype}, Preview: {S[:5]}\n")
+                f.write("\n")
+
+                # Frame information
+                f.write(f"Frame: {frame}\n")
+                f.write("\n")
+
+                # SNR_post
+                f.write("SNR_post:\n")
+                f.write("--------\n")
+                f.write(f"Shape: {SNR_post.shape}\n")
+                f.write(f"Dtype: {SNR_post.dtype}\n")
+                f.write(f"Array:\n{SNR_post}\n")
+                f.write("\n")
+                np.save(os.path.join(wiener_filter_folder, f"SNR_post_frame_{frame}.npy"), SNR_post)
+
+                # G
+                f.write("G:\n")
+                f.write("--\n")
+                f.write(f"Shape: {G.shape}\n")
+                f.write(f"Dtype: {G.dtype}\n")
+                f.write(f"Array:\n{G}\n")
+                f.write("\n")
+                np.save(os.path.join(wiener_filter_folder, f"G_frame_{frame}.npy"), G)
+
+                # S
+                f.write("S:\n")
+                f.write("--\n")
+                f.write(f"Shape: {S.shape}\n")
+                f.write(f"Dtype: {S.dtype}\n")
+                f.write(f"Array:\n{S}\n")
+                np.save(os.path.join(wiener_filter_folder, f"S_frame_{frame}.npy"), S)
+
+            ############# Temporal estimated Signal ############################
+            # Estimated signals at each frame normalized by the shift value
+            temp_s_est = np.real(ifft(S)) * self.SHIFT
+            s_est[i_min:i_max] += temp_s_est[:self.FRAME]  # Truncating zero padding
+
+            # Write debug log for temporal estimated signal
+            debug_file = os.path.join(temp_s_est_folder, f"temp_s_est_frame_{frame}.log")
+            with open(debug_file, "w") as f:
+                f.write(f"Frame: {frame}\n")
+                f.write(f"temp_s_est shape: {temp_s_est.shape}\n")
+                f.write(f"temp_s_est dtype: {temp_s_est.dtype}\n")
+                f.write(f"temp_s_est:\n{temp_s_est}\n")
+                np.save(os.path.join(temp_s_est_folder, f"temp_s_est_frame_{frame}.npy"), temp_s_est)
+
+        # Write debug log for the final estimated signal
+        debug_file = os.path.join(debug_folder, "s_est_final.log")
+        with open(debug_file, "w") as f:
+            f.write(f"s_est shape: {s_est.shape}\n")
+            f.write(f"s_est dtype: {s_est.dtype}\n")
+            f.write(f"s_est:\n{s_est}\n")
+
+        np.save(os.path.join(debug_folder, "s_est_final_prenormalization.npy"), s_est)
+
+        s_est_postnormalization = s_est / s_est.max()
+        with open(os.path.join(debug_folder, "s_est_final_postnormalization.log"), "w") as f:
+            f.write(f"s_est_postnormalization shape: {s_est_postnormalization.shape}\n")
+            f.write(f"s_est_postnormalization dtype: {s_est_postnormalization.dtype}\n")
+            f.write(f"s_est_postnormalization:\n{s_est_postnormalization}\n")
+        
+        np.save(os.path.join(debug_folder, "s_est_final_postnormalization.npy"), s_est_postnormalization)
+
+        return s_est_postnormalization
 
 def returnTeensyData(file_path):
     matrix = []  # Initialize an empty list to later convert to a numpy array
@@ -137,9 +390,9 @@ def returnTeensyData(file_path):
                 matrix.append(num_list)
 
     # Convert the list of lists into a NumPy array
-    matrix_np = np.array(matrix)
+    #matrix_np = np.array(matrix)
 
-    return  matrix_np# This will print the matrix
+    return  matrix
 
 def split_even_odd(arr):
     even_elements = arr[::2]  # real
@@ -148,13 +401,39 @@ def split_even_odd(arr):
 
 
 if __name__ == "__main__":
+    
+    mat = returnTeensyData('teensy_out.txt')
+    # everything is frame 0
+    after_window_teensy = mat[1]
+    post_fft_teensy = mat[2]
+    post_fft_real_teensy, post_fft_img_teensy = split_even_odd(post_fft_teensy)
+    mag_sq_teensy = mat[3]
+    divide_ew_teensy = mat[4]
+    divide_by_sbb_teensy = mat[5]
+    add_snr_post_by_one_teensy = mat[6]
+    divide_snr_post_by_oneplus_teensy = mat[7]
+    apply_gain_to_fft_teensy = mat[8]
+    S_real, S_img = split_even_odd(apply_gain_to_fft_teensy)
+    post_ifft_teensy = mat[9]
+    scale_by_shift_teensy = mat[10]
+    scale_by_shift_teensy_real, _ = split_even_odd(scale_by_shift_teensy)
+    out_buff_frame_teensy = mat[11]
+
+    mat = returnTeensyData('output_teensy.txt')[0]
+
+    x_framed_0 = read_python_debug_data("s_est_final", frame=0)
+    print(len(scale_by_shift_teensy_real))
+    print(x_framed_0.shape)
+    plot_two_arrays(mat, x_framed_0 , "S_est teensy", "S_est_framed_0 (python)")
+
+    '''
     mat = returnTeensyData('frame_data_teensy.txt')
     print(mat)
     frame_num = 5
     real,img = split_even_odd(mat[frame_num])
 
-    x = make_signal()
-    python_Sbb, _ = welchs_periodogram(x)
+    x_python = make_signal()
+    python_Sbb, N_NOISE = welchs_periodogram(x_python)
 
 
     plt.figure(figsize=(10, 6))
@@ -178,24 +457,55 @@ if __name__ == "__main__":
     plt.ylabel('Value')
     plt.title('Plot of Teensy Data Read from File')
     plt.legend()
-    plt.show()
 
     ##### Sbb plotting ######
     # load in Sbb from frames/Sbb.npy
     python_Sbb = np.load('frames/Sbb.npy')
-    mat = returnTeensyData('Sbb_teensy.txt')
+    teensy_Sbb = returnTeensyData('Sbb_teensy.txt')
 
     # plot it
     plt.figure(figsize=(10, 6))
     plt.plot(python_Sbb[10:-10], linestyle='-', label='Python Sbb')
-    plt.plot(mat[0][10:-10], 'o',label='Teensy Sbb')
+    plt.plot(teensy_Sbb[0][10:-10], 'o',label='Teensy Sbb')
+
+    # wiener filter on Sbb itself as testing (may give strange/uninteresing plot?)
+
+    denoise = Wiener(fs=44100, sig=x_python, Sbb=python_Sbb, N_NOISE=N_NOISE)
+    
+    # apply the Wiener filter
+    python_denoised_signal = denoise.wiener()
+    teensy_denoised_signal = returnTeensyData('output_teensy.txt')
+    # print(teensy_denoised_signal.shape) 
+
+    plt.figure(figsize=(12, 8))
+    # first subplot: original + denoised signal
+    plt.subplot(2, 1, 1)
+    plt.plot(teensy_denoised_signal[0], label='Denoised Signal, Teensy')
+    plt.plot(x_python, linestyle='dotted', label='Original Signal, Python')
+    plt.plot(python_denoised_signal, linestyle='dotted', label='Denoised Signal, Python')
+    plt.xlabel('Time')
+    plt.ylabel('Amplitude')
+    plt.title('Original and Denoised Signals')
+    plt.legend()
+
+    # subplot: for the Sbb
+    plt.subplot(2, 1, 2)
+    plt.plot(teensy_Sbb[0][10:-10], label='Sbb, Teensy, interior samples') 
+    plt.plot(python_Sbb[10:-10], linestyle='dotted', label='Sbb, Python, interior samples')
+    plt.ylabel('Power Spectral Density')
+    plt.title('Sbb')
+    plt.legend()
+
+    # Show the plots
+    plt.tight_layout()
     plt.show()
 
+    
+    
+    
 
 
-
-
-    '''
+    
     # File path
     teensy_output_file_path = 'calculated_Sbb.txt'
 
@@ -212,7 +522,7 @@ if __name__ == "__main__":
 
     x = make_signal()
     python_Sbb, _ = welchs_periodogram(x)
-    plot_frame_data(5) # random 
+    #plot_frame_data(5) # random 
 
     ## Plotting
     #plt.figure(figsize=(10, 6))
@@ -257,6 +567,6 @@ if __name__ == "__main__":
 
 
 
-'''
 
+'''
 
