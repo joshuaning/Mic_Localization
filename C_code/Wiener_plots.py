@@ -44,7 +44,7 @@ def plot_frame_data_from_numpy(frame_index, folder='frames'):
 
 
 
-def record_data_to_numpy(frame, x_framed, X_framed, power_spectrum, folder='frames'):
+def record_data_to_numpy(frame, x_framed, X_framed, power_spectrum, Sbb, folder='frames'):
     """
     Saves x_framed, X_framed, and power_spectrum to NumPy files within a specified folder.
     """
@@ -58,6 +58,9 @@ def record_data_to_numpy(frame, x_framed, X_framed, power_spectrum, folder='fram
     
     # Save X_framed (complex numbers) directly
     np.save(os.path.join(folder, f'fft_X_framed_frame_{frame}.npy'), X_framed)
+
+    # save Sbb
+    np.save(os.path.join(folder, f'Sbb.npy'), Sbb) # gets continually overwritten as Sbb gets updated
     
     # Save power_spectrum
     np.save(os.path.join(folder, f'power_spectrum_frame_{frame}.npy'), power_spectrum)
@@ -111,9 +114,10 @@ def welchs_periodogram(x, T_NOISE = (0, 22016/44100)):
             file.write(f"Frame {frame}\n")
             file.write(f"x_framed: {list(x_framed)}\n")
             file.write(f"X_framed: {[f'({k.real}, {k.imag})' for k in X_framed]}\n")
+            file.write(f"Sbb: {list(x_framed)}\n")
             file.write(f"Power Spectrum: {list(power_spectrum)}\n\n")
-
-            record_data_to_numpy(frame, x_framed, X_framed, power_spectrum)
+            
+            record_data_to_numpy(frame, x_framed, X_framed, power_spectrum, Sbb)
         
 
     return Sbb, N_NOISE
@@ -168,7 +172,7 @@ if __name__ == "__main__":
     plt.legend()
 
     plt.figure(figsize=(10, 6))
-    plt.plot(img, label='Data from teensy img')
+    plt.plot(img, 'o',label='Data from teensy img')
     plt.plot(python_X_framed.imag,label='Data from python img') 
     plt.xlabel('Index')
     plt.ylabel('Value')
@@ -176,7 +180,16 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
 
+    ##### Sbb plotting ######
+    # load in Sbb from frames/Sbb.npy
+    python_Sbb = np.load('frames/Sbb.npy')
+    mat = returnTeensyData('Sbb_teensy.txt')
 
+    # plot it
+    plt.figure(figsize=(10, 6))
+    plt.plot(python_Sbb[10:-10], linestyle='-', label='Python Sbb')
+    plt.plot(mat[0][10:-10], 'o',label='Teensy Sbb')
+    plt.show()
 
 
 

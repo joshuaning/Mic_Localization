@@ -33,7 +33,7 @@ const int frames = int( (Wiener::bufferSamples - Wiener::FRAME_SAMPLES) / OFFSET
 const int framesSamples = Wiener::blockSamples*frames;
 float32_t Sbb[NFFT]; // matrix of size NFFT x number of channels(1)
 
-bool PASSTHRU_BUT_PROCESS = true; // for timing checks
+bool PASSTHRU_BUT_PROCESS = false; // for timing checks
 
 bool recordingNoise = true;
 bool processingSignal = false;
@@ -63,6 +63,34 @@ bool processingSignal = false;
 // int32_t EW = window_list[cur_idx].EW;
 // end Hann window code
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+float find_max_of_OutBuffer(){
+	float32_t outmax = -9999.0;
+	for (int i = 0; i<Wiener::bufferSamples; i++){
+		if(outmax < outputBuffer[i]){
+			outmax = outputBuffer[i];
+		}
+	}
+	return outmax;
+}
+
+void printArr(float32_t *arr, uint32_t sz){
+	Serial.print("float[");
+	for(uint32_t i = 0; i<sz; i++){
+		Serial.print(arr[i], 4);
+		Serial.print(", ");
+	}
+	Serial.print("]");
+}
+
+void printArr(int16_t *arr, uint32_t sz){
+	Serial.print("int16_t[");
+	for(uint32_t i = 0; i<sz; i++){
+		Serial.print(arr[i]);
+		Serial.print(", ");
+	}
+	Serial.print("]");
+}
 
 //magnitude squared
 void Wiener::elementwise_mag_sq(float32_t *pSrc, float32_t *pDst, uint32_t length) {
@@ -109,7 +137,7 @@ void Wiener::pad_with_zeros(float32_t *pSrc, float32_t *pDst, uint32_t srcLength
 
 
 void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float32_t *Sbb, arm_cfft_radix4_instance_f32 *S, arm_cfft_radix4_instance_f32 *IS, float32_t *WINDOW, float32_t EW) {
-    uint32_t frames = (Wiener::Wiener::bufferSamples - Wiener::FRAME_SAMPLES) / OFFSET + 1;
+    uint32_t frames = (Wiener::bufferSamples - Wiener::FRAME_SAMPLES) / OFFSET + 1;
     float32_t xframedBuffer[Wiener::FRAME_SAMPLES];
     float32_t x_framed_interpolated_with_zeros[2*Wiener::FRAME_SAMPLES];
     float32_t fftBuffer[2 * NFFT];
@@ -123,34 +151,46 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
         uint32_t i_max = frame * OFFSET + Wiener::FRAME_SAMPLES;
 
         // Populate the frame
-		Serial.println("Populate the frame");
-        //for (uint32_t i = i_min; i < i_max; ++i) {
+		// Serial.println("Populate the frame, printing inputBuffer");
+        // for (uint32_t i = i_min; i < i_max; ++i) { // replaced on line 158
         //    xframedBuffer[i - i_min] = inputBuffer[i];
-        //}
+        // }
 
-        
+        //printArr(inputBuffer, bufferSamples);
 
         // Temporal framing with Hanning window
-        Serial.println("wienerFilter: obtaining the (windowed) frame");
+        // Serial.println("wienerFilter: obtaining the (windowed) frame");
         // arm_mult_f32(WINDOW, xframedBuffer, xframedBuffer, Wiener::FRAME_SAMPLES);
 		
+		//Serial.println("Window: ");
+		//printArr(WINDOW, Wiener::FRAME_SAMPLES);
+		
+		Serial.println("constructing xframedBuffer (already windowed): ");
         for (uint32_t i = i_min, j = 0; i < i_max; i++, j++) {
             xframedBuffer[j] = inputBuffer[i] * WINDOW[j];
         }
 
+		Serial.println("xframedBuffer immediately after population: ");
+		//printArr(xframedBuffer, Wiener::FRAME_SAMPLES);
+
 		Serial.println("wienerFilter: interpolate the frame");
         Wiener::interpolate_with_zeros(xframedBuffer, x_framed_interpolated_with_zeros, Wiener::FRAME_SAMPLES); 
+		Serial.println("interpolated xframedBuffer");
+		//printArr(x_framed_interpolated_with_zeros, 2*Wiener::FRAME_SAMPLES);
 
         // Zero padding and inteNFFT
 		Serial.println("wienerFilter: Zero padding the frame");
         Wiener::pad_with_zeros(x_framed_interpolated_with_zeros, fftBuffer, 2*Wiener::FRAME_SAMPLES, 2*NFFT);
-
+		Serial.println("interpolated, then padded, xframedBuffer");
+		//printArr(fftBuffer, 2*NFFT);
         
 
         // FFT
         //arm_cfft_f32(S, fftBuffer, 0, 1);
 		Serial.println("wienerFilter: FFT the frame");
 		arm_cfft_radix4_f32(S, fftBuffer);
+		Serial.println("frame post-FFT");
+		//printArr(fftBuffer, 2*NFFT);
 
         // Calculate the Wiener gain
         float32_t X_framed_abs_sq[NFFT];
@@ -180,6 +220,9 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
         // Divide SNR_post by (SNR_post + 1) to obtain G
         Wiener::elementwise_divide(snrPost, SNR_plus_one, G, NFFT);
 
+		Serial.println("G:");
+		//printArr(G, NFFT);
+
         // Apply gain
         for (uint32_t i = 0; i < NFFT; ++i) {
             fftBuffer[2 * i] *= G[i];
@@ -189,15 +232,23 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
         // IFFT
         //arm_cfft_f32(S, fftBuffer, 1, 1);
 		arm_cfft_radix4_f32(IS, fftBuffer); // IS is ifft object
+		Serial.println("post-ifft");
+		//printArr(fftBuffer, NFFT);
 
         // Estimated signals at each frame normalized by the shift value
-        arm_scale_f32(fftBuffer, 1.0f / NFFT, fftBuffer, 2 * NFFT);
+		//arm_scale_f32 (const float32_t *pSrc, float32_t scale, float32_t *pDst, uint32_t blockSize)
+        //arm_scale_f32(fftBuffer, 1.0f / NFFT, fftBuffer, 2 * NFFT);
+		arm_scale_f32(fftBuffer, SHIFT, fftBuffer, 2 * NFFT);
 
         // Overlap and add
-        for (uint32_t i = 0; i < Wiener::FRAME_SAMPLES; ++i) {
-            outputBuffer[i_min + i] += fftBuffer[2 * i];
+
+        for (uint32_t i = 0; i < Wiener::FRAME_SAMPLES; ++i) { // loop boundary is FRAME_SAMPLES to truncate zero padding
+			outputBuffer[i_min + i] += fftBuffer[2 * i];
         }
+
     }
+	float32_t outmax = find_max_of_OutBuffer();
+	arm_scale_f32(outputBuffer, 1/outmax, outputBuffer,Wiener::bufferSamples);
 }
 
 void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_instance_f32* S, float32_t *WINDOW, float32_t EW) {
@@ -220,7 +271,7 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
         for (uint32_t i = i_min, j = 0; i < i_max; i++, j++) {
             x_framed[j] = x[i] * WINDOW[j];
         }
-        
+
 
         Wiener::interpolate_with_zeros(x_framed, x_framed_interpolated_with_zeros, Wiener::FRAME_SAMPLES); 
 
@@ -244,7 +295,7 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
 		Serial.println(']');
 		*/
 
-		///*
+		/*
 		
 		Serial.print("frame ");
 		Serial.println(frame);
@@ -255,7 +306,7 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
 			Serial.print(", ");
 		}
 		Serial.println(']');
-		//*/
+		*/
 
         Wiener::elementwise_mag_sq(X_framed, X_framed_abs_sq, 2 * NFFT);
 		/*
@@ -269,15 +320,16 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
 		}
 		Serial.println(']');
 		*/
-		/*
+		
         for (uint32_t i = 0; i < NFFT; i++) {
             Sbb[i] = frame * Sbb[i] / (frame + 1) + X_framed_abs_sq[i] / (frame + 1);
-        }*/
+        }
     }
 }
 
 void Wiener::update(void){
-	Serial.println("Wiener::update");
+	int start = micros();
+	//Serial.println("Wiener::update");
 	float32_t EW = 0;
 	float32_t WINDOW [FRAME_SAMPLES];
 	for (uint32_t i = 0; i < FRAME_SAMPLES; ++i) {
@@ -300,7 +352,7 @@ void Wiener::update(void){
 
 	block = receiveReadOnly();
 	if (!block){
-		Serial.print("No blocks");
+		Serial.print("Wiener.cpp: No blocks");
 		return;
 	} 
 
@@ -329,24 +381,40 @@ void Wiener::update(void){
 	//TODO: PERSON 1: Implement the Sbb array processing here
 	// Collect data for the Sbb noise array
 	if (recordingNoise){
-
+		Serial.println("recording noise");
 		if(blockCounter == 0){
 			//initialize
 			memset(Sbb, 0, sizeof(Sbb));
 		}
 		// check if the noise frames have been fully collected
 		if (blockCounter < Wiener::bufferBlocks){
-			Serial.println("Recording noise"); 
-			Serial.println(blockCounter);
-			Serial.println(Wiener::bufferBlocks);
-			memcpy(&(inputBuffer[blockCounter*Wiener::blockSamples]), (float32_t *)block->data, Wiener::blockSamples*sizeof(float32_t));
+			// Serial.println("Recording noise"); 
+			// Serial.println(blockCounter);
+			// Serial.println(Wiener::bufferBlocks);
+			//arm_q15_to_float (const q15_t *pSrc, float32_t *pDst, uint32_t blockSize)
+			
+			arm_q15_to_float (block->data, inputBuffer + blockCounter*Wiener::blockSamples, Wiener::blockSamples);
+			
+			//if (blockCounter % 40 == 0){
+			//	Serial.println("block->data: ");
+			//	printArr(block->data, Wiener::blockSamples);
+			//	Serial.println("printing the newly written portion of the input buffer after conversion to float");
+			//	printArr(inputBuffer + blockCounter*Wiener::blockSamples, Wiener::blockSamples);
+			//	delay(2000);
+			// }
+			//memcpy(&(inputBuffer[blockCounter*Wiener::blockSamples]), (float32_t *)block->data, Wiener::blockSamples*sizeof(float32_t));
 		}
 		else{
-			memcpy(&inputBuffer, truth, sizeof(truth));			
+			//memcpy(&inputBuffer, truth, sizeof(truth));			
 
 			processingSignal = true;
 			Serial.println("Noise fully recorded, processing Sbb array");
 			// end recording noise and start processing sbb matrix
+			///*
+			//Serial.println("(recordingNoise==true) inputBuffer: ");
+			//printArr(inputBuffer, bufferSamples);
+			//*/
+
 			welchsPeriodogram(inputBuffer, Sbb, &S, WINDOW, EW); 
             /*
             Serial.print("[");
@@ -354,7 +422,8 @@ void Wiener::update(void){
                 Serial.print(Sbb[i]);
                 Serial.print(", ");
             }
-            Serial.print(']');*/
+            Serial.println(']');
+			*/
 
 
 			//reset the variables
@@ -401,24 +470,30 @@ void Wiener::update(void){
 	// sure that we are not overwriting the signal that is not yet processed
 	bool readyToProcess = blockCounter == Wiener::bufferBlocks;
 	if (readyToProcess) {
-		Serial.println("readyToProcess");
+		//Serial.println("readyToProcess");
 		processingSignal = true;
-		Serial.println("Start Processing Signal");
+		//Serial.println("Start Processing Signal");
 
 		// call Wiener filter
+		Serial.println("EW:");
+		Serial.println(EW);
+
+		Serial.println("input buffer before passing to Wiener");
+		//printArr(inputBuffer, Wiener::bufferSamples);
 		wienerFilter(inputBuffer, outputBuffer, Sbb, &S, &IS, WINDOW, EW);
 
 
 		processingSignal = false;
-		Serial.println("End Processing Signal");
+		//Serial.println("End Processing Signal");
 		blockCounter = 0;
     }
 
-		
+	
 
 
 	// copy the recieved input block into the inputBuffer
-	memcpy(&(inputBuffer[blockCounter*Wiener::blockSamples]), (float32_t *)block->data, Wiener::blockSamples*sizeof(float32_t));
+	//memcpy(&(inputBuffer[blockCounter*Wiener::blockSamples]), (float32_t *)block->data, Wiener::blockSamples*sizeof(float32_t));
+	arm_q15_to_float (block->data, inputBuffer + blockCounter*Wiener::blockSamples, Wiener::blockSamples);
 
 	// transmit the relevant blocks worth of samples from outputBuffer (to playback)
 
@@ -427,11 +502,16 @@ void Wiener::update(void){
 		transmit(block);
 	}
 	else{
-		Serial.println("Passing Through");
-		std::copy(outputBuffer + blockCounter*Wiener::blockSamples, outputBuffer + (blockCounter+1)*Wiener::blockSamples, b_new->data);
+		//Serial.println("Copy output buff to b_new");
+		//arm_float_to_q15 (const float32_t *pSrc, q15_t *pDst, uint32_t blockSize)
+		arm_float_to_q15(outputBuffer + blockCounter*Wiener::blockSamples, b_new->data, Wiener::blockSamples);
+		//std::copy(outputBuffer + blockCounter*Wiener::blockSamples, outputBuffer + (blockCounter+1)*Wiener::blockSamples, b_new->data);
 		transmit(b_new);
+		// printArr(b_new->data, Wiener::blockSamples); 
+		Serial.println("Done transmitting b_new");
 	}
 	for(int i = 0; i < bufferSamples; ++i) {outputBuffer[i] = 0;} // reset the output buffer
+	Serial.println("Done resetting output array");
 	
 
 	// don't forget to increment the blockCounter
@@ -444,4 +524,7 @@ void Wiener::update(void){
 		digitalWrite(LED, switcher);
 		count = 0;
 	}
+	int end = micros();
+	Serial.print("Time to complete update: ");
+	Serial.println(end-start);
 }
