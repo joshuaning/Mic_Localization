@@ -40,6 +40,8 @@ bool PASSTHRU_BUT_PROCESS = false; // for timing checks
 bool recordingNoise = true;
 bool processingSignal = false;
 
+float32_t runningMax = 0;
+
 // // Hann window code
 // struct hann_window {
 //   float32_t *coeffs;
@@ -264,6 +266,12 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
 		//printArr(outputBuffer + i_min,  Wiener::FRAME_SAMPLES);
     }
 	float32_t outmax = find_max_of_OutBuffer();
+	if(outmax < runningMax){
+		outmax = runningMax;
+	}
+	else{
+		runningMax = outmax;
+	}
 	arm_scale_f32(outputBuffer, 1/outmax, outputBuffer,Wiener::bufferSamples);
 	arm_float_to_q15(outputBuffer, outputBuffer_q, Wiener::bufferSamples);
 }
