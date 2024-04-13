@@ -91,7 +91,7 @@ print(f"Overall performance: {np.mean(flattened_list):.2f} (mean), {np.std(flatt
 print(performance)
 '''
 
-audio = whisper.load_audio('setence_1_passthrough.wav')
+audio = whisper.load_audio('Sounds/testInputGeneration/truth/sentence_1.wav')
 audio = whisper.pad_or_trim(audio)
 result = whisper.transcribe(model, audio)
 hypothesis = result["text"]
@@ -108,7 +108,7 @@ print(hypothesis)
 # plt.plot(mask*audio[0:300000], 'o', markersize=2)
 # plt.show()
 
-audio = whisper.load_audio('sentence_1_filtered.wav')
+audio = whisper.load_audio('Sounds/testInputGeneration/sentence_1_SNR-36.wav')
 audio = whisper.pad_or_trim(audio)
 result = whisper.transcribe(model, audio)
 hypothesis = result["text"]
