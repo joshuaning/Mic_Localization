@@ -27,11 +27,18 @@ Wiener                wienerLeft;
 // Route audio into the left and right filters
 //AudioConnection c1(audioInput, 0, audioOutput, 0);
 //AudioConnection c2(audioInput, 1, audioOutput, 1);
-AudioConnection c1(audioInput, 0, BandpassL, 0);
+
+//AudioConnection c1(audioInput, 0, BandpassL, 0);
+//AudioConnection c2(audioInput, 1, BandpassR, 0);
+//AudioConnection c3(BandpassL, 0, wienerLeft, 0);
+//AudioConnection c4(BandpassR, 0, audioOutput, 1);
+//AudioConnection c5(wienerLeft, 0, audioOutput, 0);
+
+AudioConnection c1(audioInput, 0, wienerLeft, 0);
 AudioConnection c2(audioInput, 1, BandpassR, 0);
-AudioConnection c3(BandpassL, 0, wienerLeft, 0);
+AudioConnection c3(wienerLeft, 0, BandpassL, 0);
 AudioConnection c4(BandpassR, 0, audioOutput, 1);
-AudioConnection c5(wienerLeft, 0, audioOutput, 0);
+AudioConnection c5(BandpassL, 0, audioOutput, 0);
 
 AudioControlSGTL5000 audioShield;
 

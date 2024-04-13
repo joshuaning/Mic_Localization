@@ -4,7 +4,6 @@
 #include <stdio.h>
 #define LED 13
 #define INTERVAL 3000
-//From HannWindow_switch
 #include <Audio.h>
 #include <Wire.h>
 #include <SD.h>
@@ -40,33 +39,26 @@ bool PASSTHRU_BUT_PROCESS = false; // for timing checks
 bool recordingNoise = true;
 bool processingSignal = false;
 
+const uint16_t numMax = 500;
 float32_t runningMax = 0;
+float32_t noiseMax = 0;
+uint16_t MaxIdx = 0;
+float32_t historicalMax [numMax]; 
+float32_t noiseMargin = 0;
+bool firstPass = true;
+float32_t stdNoise[Wiener::bufferSamples];
 
-// // Hann window code
-// struct hann_window {
-//   float32_t *coeffs;
-//   short num_coeffs;    // num_coeffs must be an even number, 4 or higher
-//   int32_t EW;
-// };
+// ----------------------------------- Helper Functions ----------------------------------- //
 
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-// TODO: Using matlab to generate hanning window of Frame size
-// 0.02 (882 points) and 0.007 (309 points)
-// Precompute the window energy
-
-// index of initial window
-// Change to 0 for 20 ms frame size
-//value to updated using Serial input
-// int cur_idx = 0; // 0 for 20ms frame size, 1 for 7ms frame size
-// struct hann_window window_list[] = {
-//   {hann882  , 882, 5046117},  		//20 ms frame size
-//   {hann309  , 309, 14433866},			//7 ms frame size
-//   {NULL,   0, 0}
-// };
-// float32_t* WINDOW = window_list[cur_idx].coeffs;
-// int32_t EW = window_list[cur_idx].EW;
-// end Hann window code
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+float find_max_of_History(){
+	float32_t outmax = -9999.0;
+	for (int i = 0; i<numMax; i++){
+		if(outmax < historicalMax[i]){
+			outmax = historicalMax[i];
+		}
+	}
+	return outmax;
+}
 
 float find_max_of_OutBuffer(){
 	float32_t outmax = -9999.0;
@@ -138,14 +130,24 @@ void Wiener::pad_with_zeros(float32_t *pSrc, float32_t *pDst, uint32_t srcLength
         memset(pDst + srcLength, 0, (dstLength - srcLength) * sizeof(float32_t));
     }
 }
+// ----------------------------------- Helper Functions END ----------------------------------- //
 
 
+
+// ----------------------------------- Wiener Functions ----------------------------------- //
 void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float32_t *Sbb, arm_cfft_radix4_instance_f32 *S, arm_cfft_radix4_instance_f32 *IS, float32_t *WINDOW, float32_t EW) {
     uint32_t frames = (Wiener::bufferSamples - Wiener::FRAME_SAMPLES) / OFFSET + 1;
     float32_t xframedBuffer[Wiener::FRAME_SAMPLES];
     float32_t x_framed_interpolated_with_zeros[2*Wiener::FRAME_SAMPLES];
     float32_t fftBuffer[2 * NFFT];
     float32_t G[NFFT];
+	Serial.println("Finding max in input signal ");
+	float inMax = -9999;
+	for(int i = 0; i < Wiener::bufferSamples; i++){
+		if(inMax < inputBuffer[i]){
+			inMax = inputBuffer[i];
+		}
+	}
 
     // Instantiate Hann window and compute EW
     //float32_t WINDOW[Wiener::FRAME_SAMPLES];
@@ -154,11 +156,6 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
         uint32_t i_min = frame * OFFSET;
         uint32_t i_max = frame * OFFSET + Wiener::FRAME_SAMPLES;
 
-        // Populate the frame
-		// Serial.println("Populate the frame, printing inputBuffer");
-        // for (uint32_t i = i_min; i < i_max; ++i) { // replaced on line 158
-        //    xframedBuffer[i - i_min] = inputBuffer[i];
-        // }
 		Serial.println("inputBuffer [0]");
         //printArr(inputBuffer, bufferSamples);
 
@@ -190,7 +187,6 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
         
 
         // FFT
-        //arm_cfft_f32(S, fftBuffer, 0, 1);
 		//Serial.println("wienerFilter: FFT the frame");
 		arm_cfft_radix4_f32(S, fftBuffer);
 		Serial.println("frame post-FFT: [2]");
@@ -250,8 +246,6 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
 		//printArr(fftBuffer, NFFT*2);
 
         // Estimated signals at each frame normalized by the shift value
-		//arm_scale_f32 (const float32_t *pSrc, float32_t scale, float32_t *pDst, uint32_t blockSize)
-        //arm_scale_f32(fftBuffer, 1.0f / NFFT, fftBuffer, 2 * NFFT);
 		arm_scale_f32(fftBuffer, SHIFT, fftBuffer, 2 * NFFT);
 		Serial.println("scaling by shift [10]");
 		//printArr(fftBuffer, NFFT*2);
@@ -265,18 +259,50 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
 		Serial.println("output buffer of the frame [11]");
 		//printArr(outputBuffer + i_min,  Wiener::FRAME_SAMPLES);
     }
+	Serial.println("Finding max in OutBuffer");
 	float32_t outmax = find_max_of_OutBuffer();
-	if(outmax < runningMax){
-		outmax = runningMax;
+	Serial.println("Computing the Historic Max ");
+	if(firstPass){
+		Serial.println("first pass ");
+		historicalMax[MaxIdx] = outmax;
+		MaxIdx++;
+		firstPass = false;
 	}
-	else{
-		runningMax = outmax;
+	else if(inMax > noiseMax + noiseMargin){
+		Serial.println("more than 1 std");
+		historicalMax[MaxIdx] = outmax;
+		MaxIdx++;
+		if(MaxIdx == numMax){
+			MaxIdx = 0;
+		}
 	}
-	arm_scale_f32(outputBuffer, 1/outmax, outputBuffer,Wiener::bufferSamples);
+	Serial.println("max of history");
+	float maxOfHistory = find_max_of_History();
+	Serial.println(maxOfHistory);
+	
+	arm_scale_f32(outputBuffer, 1/maxOfHistory, outputBuffer,Wiener::bufferSamples);
 	arm_float_to_q15(outputBuffer, outputBuffer_q, Wiener::bufferSamples);
 }
 
 void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_instance_f32* S, float32_t *WINDOW, float32_t EW) {
+	//arm_std_f32 (const float32_t *pSrc, uint32_t blockSize, float32_t *pResult)
+	Serial.println("The noise margin");
+	//arm_std_f32(x, Wiener::blockSamples, stdNoise);
+	//Result = sqrt((sumOfSquares - sum2 / blockSize) / (blockSize - 1))
+	
+	for(int i = 0; i< Wiener::blockSamples; i++){
+		noiseMargin += x[i] * x[i];
+	}
+	noiseMargin = std::sqrt(noiseMargin) * 2;
+	Serial.println(noiseMargin);
+	Serial.println("Finding max in Noise input ");
+	for(int i = 0; i<Wiener::bufferSamples; i++){
+		if(noiseMax < x[i] ){
+			noiseMax = x[i];
+		}
+	}
+	Serial.println("noiseMax");
+	Serial.println(noiseMax);
 
     for (uint32_t i = 0; i < NFFT; i++) {
         Sbb[i] = 0.0f;
@@ -286,25 +312,17 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
     float32_t x_framed_interpolated_with_zeros[2*Wiener::FRAME_SAMPLES];
     float32_t X_framed[2 * NFFT];
     float32_t X_framed_abs_sq[NFFT];
+	
+	arm_fill_f32(0.0f, historicalMax, numMax);
 
     for (uint32_t frame = 0; frame < frames; frame++) {
         uint32_t i_min = frame * OFFSET;
         uint32_t i_max = frame * OFFSET + Wiener::FRAME_SAMPLES;
-
-        //arm_mult_f32(WINDOW, x + frame + i_min, xframedBuffer, Wiener::FRAME_SAMPLES);
-
         for (uint32_t i = i_min, j = 0; i < i_max; i++, j++) {
             x_framed[j] = x[i] * WINDOW[j];
         }
-
-
         Wiener::interpolate_with_zeros(x_framed, x_framed_interpolated_with_zeros, Wiener::FRAME_SAMPLES); 
-
         Wiener::pad_with_zeros(x_framed_interpolated_with_zeros, X_framed, 2*Wiener::FRAME_SAMPLES, 2*NFFT);
-
-        //arm_cfft_f32 (const arm_cfft_instance_f32 *S, float32_t *p1, uint8_t ifftFlag, uint8_t bitReverseFlag), p1 has length 2*fftLen (it is complex) 
-        //arm_cfft_f32(S, X_framed, 0, 1);
-		//arm_cfft_f32(&arm_cfft_sR_f32_len1024, X_framed, 0, 1);
 		
 		arm_cfft_radix4_f32(S, X_framed);
 
@@ -321,7 +339,6 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
 		*/
 
 		/*
-		
 		Serial.print("frame ");
 		Serial.println(frame);
 		Serial.print('[');
@@ -351,6 +368,7 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
         }
     }
 }
+// ----------------------------------- Wiener Functions END ----------------------------------- //
 
 void Wiener::update(void){
 	int start = micros();
