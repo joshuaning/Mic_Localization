@@ -22,6 +22,7 @@ AudioFilterFIR        BandpassL;
 AudioFilterFIR        BandpassR;
 AudioOutputI2S        audioOutput;        // audio shield: headphones & line-out
 Wiener                wienerLeft;
+//VAD                   VADLeft;
 
 // Create Audio connections between the components
 // Route audio into the left and right filters
@@ -35,10 +36,11 @@ Wiener                wienerLeft;
 //AudioConnection c5(wienerLeft, 0, audioOutput, 0);
 
 AudioConnection c1(audioInput, 0, wienerLeft, 0);
-AudioConnection c2(audioInput, 1, BandpassR, 0);
-AudioConnection c3(wienerLeft, 0, BandpassL, 0);
-AudioConnection c4(BandpassR, 0, audioOutput, 1);
-AudioConnection c5(BandpassL, 0, audioOutput, 0);
+AudioConnection c2(wienerLeft, 0, BandpassL, 0);
+AudioConnection c3(BandpassL, 0, audioOutput, 0);
+//AudioConnection c4(VADLeft, 0, audioOutput, 0);
+
+AudioConnection c5(audioInput, 1, audioOutput, 1);
 
 AudioControlSGTL5000 audioShield;
 
@@ -72,7 +74,7 @@ void setup() {
   audioShield.volume(0.6);
   BandpassL.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
   BandpassR.begin(fir_list[start_idx].coeffs, fir_list[start_idx].num_coeffs);
-  //vadLeft.begin(((const short *) 2), 100, 1000000000);
+  //VADLeft.begin(((const short *) 2), 10000000, 13295362);
   wienerLeft.begin((const short *)2, 2911495, 10000000);
 
 }
