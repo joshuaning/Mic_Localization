@@ -52,7 +52,7 @@ float32_t stdNoise[Wiener::bufferSamples];
 
 float find_max_of_History(){
 	float32_t outmax = -9999.0;
-	for (int i = 0; i<numMax; i++){
+	for (int i = 0; i<numMax; i++){aa
 		if(outmax < historicalMax[i]){
 			outmax = historicalMax[i];
 		}
