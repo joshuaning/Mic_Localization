@@ -262,11 +262,13 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
 	Serial.println("Finding max in OutBuffer");
 	float32_t outmax = find_max_of_OutBuffer();
 	Serial.println("Computing the Historic Max ");
+	float32_t normalizeBy;
 	if(firstPass){
 		Serial.println("first pass ");
 		historicalMax[MaxIdx] = outmax;
 		MaxIdx++;
 		firstPass = false;
+		normalizeBy = 1;
 	}
 	else if(inMax > noiseMax + noiseMargin){
 		Serial.println("more than 1 std");
@@ -275,12 +277,15 @@ void Wiener::wienerFilter(float32_t *inputBuffer, float32_t *outputBuffer, float
 		if(MaxIdx == numMax){
 			MaxIdx = 0;
 		}
+		normalizeBy = find_max_of_History();
+		Serial.println("max of history");
+		Serial.println(normalizeBy);
 	}
-	Serial.println("max of history");
-	float maxOfHistory = find_max_of_History();
-	Serial.println(maxOfHistory);
+	else{
+		normalizeBy = 1;
+	}
 	
-	arm_scale_f32(outputBuffer, 1/maxOfHistory, outputBuffer,Wiener::bufferSamples);
+	arm_scale_f32(outputBuffer, 1/normalizeBy, outputBuffer,Wiener::bufferSamples);
 	arm_float_to_q15(outputBuffer, outputBuffer_q, Wiener::bufferSamples);
 }
 
@@ -293,7 +298,7 @@ void Wiener::welchsPeriodogram(float32_t *x, float32_t *Sbb,  arm_cfft_radix4_in
 	for(int i = 0; i< Wiener::blockSamples; i++){
 		noiseMargin += x[i] * x[i];
 	}
-	noiseMargin = std::sqrt(noiseMargin) * 2;
+	noiseMargin = std::sqrt(noiseMargin);
 	Serial.println(noiseMargin);
 	Serial.println("Finding max in Noise input ");
 	for(int i = 0; i<Wiener::bufferSamples; i++){
