@@ -58,7 +58,7 @@ def wer(reference, hypothesis):
 # 5 Rice is often served in round bowls.
 
 model = whisper.load_model("base.en")
-
+'''
 reference_sentence = ["", "The birch canoe slid on the smooth planks.", "Glue the sheet to the dark blue background.", 
     "It's easy to tell the depth of a well.", "These days a chicken leg is a rare dish.", "Rice is often served in round bowls."]
 
@@ -89,3 +89,28 @@ flattened_list = [item for sublist in performance for item in sublist]
 print(f"Overall performance: {np.mean(flattened_list):.2f} (mean), {np.std(flattened_list):.2f} (std)")
 
 print(performance)
+'''
+
+audio = whisper.load_audio('Sounds/testInputGeneration/truth/sentence_1.wav')
+audio = whisper.pad_or_trim(audio)
+result = whisper.transcribe(model, audio)
+hypothesis = result["text"]
+print('pass through')
+print(hypothesis)
+
+# import numpy as np
+# n = 300000  # replace with your desired length
+# mask = np.zeros(n)
+# mask[::128] = 1
+
+# import matplotlib.pyplot as plt
+# plt.plot(audio[0:300000], '-o', markersize=1)
+# plt.plot(mask*audio[0:300000], 'o', markersize=2)
+# plt.show()
+
+audio = whisper.load_audio('Sounds/testInputGeneration/sentence_1_SNR-36.wav')
+audio = whisper.pad_or_trim(audio)
+result = whisper.transcribe(model, audio)
+hypothesis = result["text"]
+print('filtered')
+print(hypothesis)

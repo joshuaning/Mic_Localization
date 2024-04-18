@@ -139,5 +139,6 @@
 #include "synth_pwm.h"
 #include "synth_wavetable.h"
 #include "vad.h"
+#include "wiener.h"
 
 #endif
