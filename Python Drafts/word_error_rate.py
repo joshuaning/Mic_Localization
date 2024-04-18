@@ -51,66 +51,68 @@ def wer(reference, hypothesis):
     wer_score = float(edit_distance) / len_ref
     return wer_score
 
-# 1 The birch canoe slid on the smooth planks.
-# 2 Glue the sheet to the dark blue background.
-# 3 It's easy to tell the depth of a well.
-# 4 These days a chicken leg is a rare dish.
-# 5 Rice is often served in round bowls.
+if __name__ == "__main__":
 
-model = whisper.load_model("base.en")
-'''
-reference_sentence = ["", "The birch canoe slid on the smooth planks.", "Glue the sheet to the dark blue background.", 
-    "It's easy to tell the depth of a well.", "These days a chicken leg is a rare dish.", "Rice is often served in round bowls."]
-
-path = "/Users/zijunning/Desktop/Mic_Localization/Sounds/Test_Output"
-dir_list = os.listdir(path)
-dir_list = sorted(dir_list)
-
-#create an array of empty array with length of reference_sentence - 1  to store the performance
-performance = [[] for _ in range(len(reference_sentence) - 1)]
-
-# Iterate over the files in the directory
-for file in tqdm(range(len(dir_list))):
-    cur_file = dir_list[file]
-    if cur_file.endswith(".wav"):
-        sentence_num = int(cur_file[9])
-        audio = whisper.load_audio(f"{path}/{cur_file}")
-        audio = whisper.pad_or_trim(audio)
-        result = whisper.transcribe(model, audio)
-        hypothesis = result["text"]
-        error_rate = wer(reference_sentence[sentence_num], hypothesis)
-        performance[sentence_num-1] = performance[sentence_num-1] + [error_rate]
-
-# Print the performance
-for(i, perf) in enumerate(performance):
-    print(f"Performance for sentence {i + 1}: {np.mean(perf):.2f} (mean), {np.std(perf):.2f} (std)")
-
-flattened_list = [item for sublist in performance for item in sublist]
-print(f"Overall performance: {np.mean(flattened_list):.2f} (mean), {np.std(flattened_list):.2f} (std)")
-
-print(performance)
-'''
-
-audio = whisper.load_audio('Sounds/testInputGeneration/truth/sentence_1.wav')
-audio = whisper.pad_or_trim(audio)
-result = whisper.transcribe(model, audio)
-hypothesis = result["text"]
-print('pass through')
-print(hypothesis)
-
-# import numpy as np
-# n = 300000  # replace with your desired length
-# mask = np.zeros(n)
-# mask[::128] = 1
-
-# import matplotlib.pyplot as plt
-# plt.plot(audio[0:300000], '-o', markersize=1)
-# plt.plot(mask*audio[0:300000], 'o', markersize=2)
-# plt.show()
-
-audio = whisper.load_audio('Sounds/testInputGeneration/sentence_1_SNR-36.wav')
-audio = whisper.pad_or_trim(audio)
-result = whisper.transcribe(model, audio)
-hypothesis = result["text"]
-print('filtered')
-print(hypothesis)
+    # 1 The birch canoe slid on the smooth planks.
+    # 2 Glue the sheet to the dark blue background.
+    # 3 It's easy to tell the depth of a well.
+    # 4 These days a chicken leg is a rare dish.
+    # 5 Rice is often served in round bowls.
+    
+    model = whisper.load_model("base.en")
+    '''
+    reference_sentence = ["", "The birch canoe slid on the smooth planks.", "Glue the sheet to the dark blue background.", 
+        "It's easy to tell the depth of a well.", "These days a chicken leg is a rare dish.", "Rice is often served in round bowls."]
+    
+    path = "/Users/zijunning/Desktop/Mic_Localization/Sounds/Test_Output"
+    dir_list = os.listdir(path)
+    dir_list = sorted(dir_list)
+    
+    #create an array of empty array with length of reference_sentence - 1  to store the performance
+    performance = [[] for _ in range(len(reference_sentence) - 1)]
+    
+    # Iterate over the files in the directory
+    for file in tqdm(range(len(dir_list))):
+        cur_file = dir_list[file]
+        if cur_file.endswith(".wav"):
+            sentence_num = int(cur_file[9])
+            audio = whisper.load_audio(f"{path}/{cur_file}")
+            audio = whisper.pad_or_trim(audio)
+            result = whisper.transcribe(model, audio)
+            hypothesis = result["text"]
+            error_rate = wer(reference_sentence[sentence_num], hypothesis)
+            performance[sentence_num-1] = performance[sentence_num-1] + [error_rate]
+    
+    # Print the performance
+    for(i, perf) in enumerate(performance):
+        print(f"Performance for sentence {i + 1}: {np.mean(perf):.2f} (mean), {np.std(perf):.2f} (std)")
+    
+    flattened_list = [item for sublist in performance for item in sublist]
+    print(f"Overall performance: {np.mean(flattened_list):.2f} (mean), {np.std(flattened_list):.2f} (std)")
+    
+    print(performance)
+    '''
+    
+    audio = whisper.load_audio('setence_1_passthrough.wav')
+    audio = whisper.pad_or_trim(audio)
+    result = whisper.transcribe(model, audio)
+    hypothesis = result["text"]
+    print('pass through')
+    print(hypothesis)
+    
+    # import numpy as np
+    # n = 300000  # replace with your desired length
+    # mask = np.zeros(n)
+    # mask[::128] = 1
+    
+    # import matplotlib.pyplot as plt
+    # plt.plot(audio[0:300000], '-o', markersize=1)
+    # plt.plot(mask*audio[0:300000], 'o', markersize=2)
+    # plt.show()
+    
+    audio = whisper.load_audio('sentence_1_filtered.wav')
+    audio = whisper.pad_or_trim(audio)
+    result = whisper.transcribe(model, audio)
+    hypothesis = result["text"]
+    print('filtered')
+    print(hypothesis)
